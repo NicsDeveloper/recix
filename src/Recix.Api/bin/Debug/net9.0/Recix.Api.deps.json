@@ -49,7 +49,7 @@
           }
         }
       },
-      "Microsoft.EntityFrameworkCore.Relational/9.0.1": {
+      "Microsoft.EntityFrameworkCore.Relational/9.0.15": {
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "9.0.15",
           "Microsoft.Extensions.Caching.Memory": "9.0.15",
@@ -58,8 +58,8 @@
         },
         "runtime": {
           "lib/net8.0/Microsoft.EntityFrameworkCore.Relational.dll": {
-            "assemblyVersion": "9.0.1.0",
-            "fileVersion": "9.0.124.61002"
+            "assemblyVersion": "9.0.15.0",
+            "fileVersion": "9.0.1526.17602"
           }
         }
       },
@@ -223,7 +223,7 @@
       "Npgsql.EntityFrameworkCore.PostgreSQL/9.0.4": {
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "9.0.15",
-          "Microsoft.EntityFrameworkCore.Relational": "9.0.1",
+          "Microsoft.EntityFrameworkCore.Relational": "9.0.15",
           "Npgsql": "9.0.3"
         },
         "runtime": {
@@ -293,6 +293,7 @@
       "Recix.Infrastructure/1.0.0": {
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "9.0.15",
+          "Microsoft.EntityFrameworkCore.Relational": "9.0.15",
           "Microsoft.Extensions.Hosting.Abstractions": "9.0.15",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "9.0.4",
           "Recix.Application": "1.0.0",
@@ -334,12 +335,12 @@
       "path": "microsoft.entityframeworkcore.abstractions/9.0.15",
       "hashPath": "microsoft.entityframeworkcore.abstractions.9.0.15.nupkg.sha512"
     },
-    "Microsoft.EntityFrameworkCore.Relational/9.0.1": {
+    "Microsoft.EntityFrameworkCore.Relational/9.0.15": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-7Iu0h4oevRvH4IwPzmxuIJGYRt55TapoREGlluk75KCO7lenN0+QnzCl6cQDY48uDoxAUpJbpK2xW7o8Ix69dw==",
-      "path": "microsoft.entityframeworkcore.relational/9.0.1",
-      "hashPath": "microsoft.entityframeworkcore.relational.9.0.1.nupkg.sha512"
+      "sha512": "sha512-RrU/Wgb6Hg7D/e3kEZjKNh7UZxc61i3iwM1wtR/fpKk090ZQTEzcZjIIKC8Jpl+WXeOaC3fPYH5++FRZKpS7kw==",
+      "path": "microsoft.entityframeworkcore.relational/9.0.15",
+      "hashPath": "microsoft.entityframeworkcore.relational.9.0.15.nupkg.sha512"
     },
     "Microsoft.Extensions.Caching.Abstractions/9.0.15": {
       "type": "package",
