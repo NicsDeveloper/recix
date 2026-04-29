@@ -7,44 +7,46 @@ using Recix.Infrastructure.Persistence;
 
 namespace Recix.Infrastructure.Repositories;
 
-public sealed class ChargeRepository : IChargeRepository
+public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization currentOrg) : IChargeRepository
 {
-    private readonly RecixDbContext _db;
+    // Retorna apenas as charges da org atual (ou todas se contexto de sistema)
+    private IQueryable<Charge> OrgQuery() =>
+        currentOrg.OrganizationId.HasValue
+            ? db.Charges.Where(c => c.OrganizationId == currentOrg.OrganizationId.Value)
+            : db.Charges;
 
-    public ChargeRepository(RecixDbContext db) => _db = db;
+    public Task<Charge?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        OrgQuery().FirstOrDefaultAsync(c => c.Id == id, ct);
 
-    public Task<Charge?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _db.Charges.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    public Task<Charge?> GetByReferenceIdAsync(string referenceId, CancellationToken ct = default) =>
+        OrgQuery().FirstOrDefaultAsync(c => c.ReferenceId == referenceId, ct);
 
-    public Task<Charge?> GetByReferenceIdAsync(string referenceId, CancellationToken cancellationToken = default) =>
-        _db.Charges.FirstOrDefaultAsync(c => c.ReferenceId == referenceId, cancellationToken);
+    public Task<Charge?> GetByExternalIdAsync(string externalId, CancellationToken ct = default) =>
+        OrgQuery().FirstOrDefaultAsync(c => c.ExternalId == externalId, ct);
 
-    public Task<Charge?> GetByExternalIdAsync(string externalId, CancellationToken cancellationToken = default) =>
-        _db.Charges.FirstOrDefaultAsync(c => c.ExternalId == externalId, cancellationToken);
-
-    public Task<int> CountByDateAsync(DateTime date, CancellationToken cancellationToken = default)
+    public Task<int> CountByDateAsync(DateTime date, CancellationToken ct = default)
     {
         var start = date.Date.ToUniversalTime();
-        var end = start.AddDays(1);
-        return _db.Charges.CountAsync(c => c.CreatedAt >= start && c.CreatedAt < end, cancellationToken);
+        var end   = start.AddDays(1);
+        return OrgQuery().CountAsync(c => c.CreatedAt >= start && c.CreatedAt < end, ct);
     }
 
-    public async Task AddAsync(Charge charge, CancellationToken cancellationToken = default)
+    public async Task AddAsync(Charge charge, CancellationToken ct = default)
     {
-        await _db.Charges.AddAsync(charge, cancellationToken);
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.Charges.AddAsync(charge, ct);
+        await db.SaveChangesAsync(ct);
     }
 
-    public async Task UpdateAsync(Charge charge, CancellationToken cancellationToken = default)
+    public async Task UpdateAsync(Charge charge, CancellationToken ct = default)
     {
-        _db.Charges.Update(charge);
-        await _db.SaveChangesAsync(cancellationToken);
+        db.Charges.Update(charge);
+        await db.SaveChangesAsync(ct);
     }
 
-    public Task<List<Charge>> GetExpiredPendingAsync(CancellationToken cancellationToken = default) =>
-        _db.Charges
+    public Task<List<Charge>> GetExpiredPendingAsync(CancellationToken ct = default) =>
+        OrgQuery()
            .Where(c => c.Status == ChargeStatus.Pending && c.ExpiresAt < DateTime.UtcNow)
-           .ToListAsync(cancellationToken);
+           .ToListAsync(ct);
 
     public async Task<PagedResult<Charge>> ListAsync(
         ChargeStatus? status,
@@ -52,32 +54,24 @@ public sealed class ChargeRepository : IChargeRepository
         DateTime? toDate,
         int page,
         int pageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken ct = default)
     {
-        var query = _db.Charges.AsQueryable();
+        var query = OrgQuery();
 
         if (status.HasValue)
             query = query.Where(c => c.Status == status.Value);
-
         if (fromDate.HasValue)
             query = query.Where(c => c.CreatedAt >= fromDate.Value.ToUniversalTime());
-
         if (toDate.HasValue)
             query = query.Where(c => c.CreatedAt < toDate.Value.ToUniversalTime().AddDays(1));
 
-        var total = await query.CountAsync(cancellationToken);
+        var total = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(c => c.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(ct);
 
-        return new PagedResult<Charge>
-        {
-            Items = items,
-            TotalCount = total,
-            Page = page,
-            PageSize = pageSize
-        };
+        return new PagedResult<Charge> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
 }

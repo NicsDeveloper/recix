@@ -19,6 +19,7 @@ public sealed class ReconciliationEngine
             string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
         {
             var result = ReconciliationResult.Create(
+                paymentEvent.OrganizationId,
                 null, paymentEvent.Id,
                 ReconciliationStatus.InvalidReference,
                 "Payment event has neither ExternalChargeId nor ReferenceId.",
@@ -32,6 +33,7 @@ public sealed class ReconciliationEngine
         if (charge is null)
         {
             var result = ReconciliationResult.Create(
+                paymentEvent.OrganizationId,
                 null, paymentEvent.Id,
                 ReconciliationStatus.PaymentWithoutCharge,
                 "No charge found matching ExternalChargeId or ReferenceId.",
@@ -40,11 +42,13 @@ public sealed class ReconciliationEngine
             return new ReconciliationOutcome(result, null);
         }
 
+        var orgId = paymentEvent.OrganizationId;
+
         // Duplicate: charge already settled
         if (charge.Status == ChargeStatus.Paid || charge.Status == ChargeStatus.Divergent)
         {
             var result = ReconciliationResult.Create(
-                charge.Id, paymentEvent.Id,
+                orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.DuplicatePayment,
                 $"Charge is already in status {charge.Status}. Duplicate payment ignored.",
                 charge.Amount, paymentEvent.PaidAmount);
@@ -57,7 +61,7 @@ public sealed class ReconciliationEngine
         {
             charge.MarkAsDivergent();
             var result = ReconciliationResult.Create(
-                charge.Id, paymentEvent.Id,
+                orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.ExpiredChargePaid,
                 $"Charge expired at {charge.ExpiresAt:O}. Payment received after expiration.",
                 charge.Amount, paymentEvent.PaidAmount);
@@ -70,7 +74,7 @@ public sealed class ReconciliationEngine
         {
             charge.MarkAsDivergent();
             var result = ReconciliationResult.Create(
-                charge.Id, paymentEvent.Id,
+                orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.AmountMismatch,
                 $"Paid amount {paymentEvent.PaidAmount:F2} differs from expected {charge.Amount:F2}.",
                 charge.Amount, paymentEvent.PaidAmount);
@@ -81,7 +85,7 @@ public sealed class ReconciliationEngine
         // Happy path: matched
         charge.MarkAsPaid();
         var matched = ReconciliationResult.Create(
-            charge.Id, paymentEvent.Id,
+            orgId, charge.Id, paymentEvent.Id,
             ReconciliationStatus.Matched,
             "Payment matched successfully.",
             charge.Amount, paymentEvent.PaidAmount);

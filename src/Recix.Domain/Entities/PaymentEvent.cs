@@ -5,8 +5,9 @@ namespace Recix.Domain.Entities;
 
 public sealed class PaymentEvent
 {
-    public Guid Id { get; private set; }
-    public string EventId { get; private set; } = default!;
+    public Guid Id             { get; private set; }
+    public Guid OrganizationId { get; private set; }
+    public string EventId      { get; private set; } = default!;
     public string? ExternalChargeId { get; private set; }
     public string? ReferenceId { get; private set; }
     public decimal PaidAmount { get; private set; }
@@ -20,6 +21,7 @@ public sealed class PaymentEvent
     private PaymentEvent() { }
 
     public static PaymentEvent Create(
+        Guid organizationId,
         string eventId,
         string? externalChargeId,
         string? referenceId,
@@ -33,8 +35,9 @@ public sealed class PaymentEvent
 
         return new PaymentEvent
         {
-            Id = Guid.NewGuid(),
-            EventId = eventId,
+            Id             = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            EventId        = eventId,
             ExternalChargeId = externalChargeId,
             ReferenceId = referenceId,
             PaidAmount = paidAmount,

@@ -1,56 +1,83 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import type { UserDto } from '../types'
+/* eslint react-refresh/only-export-components: 0 */
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import type { UserDto, OrgMembershipDto, JoinRequestDto } from '../types'
 
-const TOKEN_KEY = 'recix_token'
-const USER_KEY  = 'recix_user'
+const TOKEN_KEY   = 'recix_token'
+const USER_KEY    = 'recix_user'
+const ORGS_KEY    = 'recix_orgs'
+const PENDING_KEY = 'recix_pending_join'
 
 interface AuthContextValue {
-  user:      UserDto | null
-  token:     string | null
-  isLoading: boolean
-  login:     (token: string, user: UserDto) => void
-  logout:    () => void
+  user:               UserDto | null
+  token:              string | null
+  organizations:      OrgMembershipDto[]
+  currentOrg:         OrgMembershipDto | null
+  pendingJoinRequest: JoinRequestDto | null
+  isLoading:          boolean
+  login:              (token: string, user: UserDto, orgs?: OrgMembershipDto[], pending?: JoinRequestDto | null) => void
+  logout:             () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken]   = useState<string | null>(null)
-  const [user, setUser]     = useState<UserDto | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+function readLocal<T>(key: string): T | null {
+  try {
+    const val = localStorage.getItem(key)
+    return val ? (JSON.parse(val) as T) : null
+  } catch {
+    return null
+  }
+}
 
-  // Restaura sessão do localStorage na montagem
-  useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_KEY)
-    const storedUser  = localStorage.getItem(USER_KEY)
-    if (storedToken && storedUser) {
-      try {
-        setToken(storedToken)
-        setUser(JSON.parse(storedUser))
-      } catch {
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(USER_KEY)
-      }
-    }
-    setIsLoading(false)
-  }, [])
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(() => {
+    try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
+  })
 
-  const login = useCallback((newToken: string, newUser: UserDto) => {
+  const [user, setUser] = useState<UserDto | null>(() => readLocal<UserDto>(USER_KEY))
+
+  const [organizations, setOrganizations] = useState<OrgMembershipDto[]>(
+    () => readLocal<OrgMembershipDto[]>(ORGS_KEY) ?? []
+  )
+
+  const [pendingJoinRequest, setPendingJoinRequest] = useState<JoinRequestDto | null>(
+    () => readLocal<JoinRequestDto>(PENDING_KEY)
+  )
+
+  const isLoading = false
+
+  const currentOrg = organizations.find(o => o.isCurrent) ?? organizations[0] ?? null
+
+  const login = useCallback((
+    newToken: string,
+    newUser: UserDto,
+    orgs: OrgMembershipDto[] = [],
+    pending: JoinRequestDto | null = null,
+  ) => {
     localStorage.setItem(TOKEN_KEY, newToken)
     localStorage.setItem(USER_KEY, JSON.stringify(newUser))
+    localStorage.setItem(ORGS_KEY, JSON.stringify(orgs))
+    if (pending) localStorage.setItem(PENDING_KEY, JSON.stringify(pending))
+    else         localStorage.removeItem(PENDING_KEY)
     setToken(newToken)
     setUser(newUser)
+    setOrganizations(orgs)
+    setPendingJoinRequest(pending)
   }, [])
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(ORGS_KEY)
+    localStorage.removeItem(PENDING_KEY)
     setToken(null)
     setUser(null)
+    setOrganizations([])
+    setPendingJoinRequest(null)
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, organizations, currentOrg, pendingJoinRequest, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )
@@ -63,5 +90,5 @@ export function useAuth() {
 }
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
 }

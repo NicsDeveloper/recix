@@ -4,12 +4,10 @@ using Recix.Domain.Entities;
 
 namespace Recix.Application.UseCases;
 
-/// <summary>
-/// Verifica o credential (ID token) do Google Identity Services,
-/// cria ou encontra o usuário e devolve um JWT próprio do RECIX.
-/// </summary>
 public sealed class GoogleAuthUseCase(
     IUserRepository users,
+    IOrganizationRepository orgs,
+    IOrganizationJoinRequestRepository joinRequests,
     IJwtService jwt,
     IGoogleTokenVerifier googleVerifier)
 {
@@ -17,9 +15,10 @@ public sealed class GoogleAuthUseCase(
     {
         var payload = await googleVerifier.VerifyAsync(request.Credential, ct);
 
-        // Tenta localizar por GoogleId primeiro; depois por e-mail (conta pré-existente)
         var user = await users.GetByGoogleIdAsync(payload.Subject, ct)
                 ?? await users.GetByEmailAsync(payload.Email, ct);
+
+        bool isNew = user is null;
 
         if (user is null)
         {
@@ -28,18 +27,34 @@ public sealed class GoogleAuthUseCase(
         }
         else
         {
-            // Vincula GoogleId se a conta foi criada com senha anteriormente
             if (user.GoogleId is null) user.LinkGoogle(payload.Subject);
-            // Atualiza nome caso tenha mudado no Google
             user.SetName(payload.Name);
             user.RecordLogin();
             await users.UpdateAsync(user, ct);
         }
 
-        return new AuthResponse
+        // Se é um usuário novo pelo Google, cria automaticamente a primeira org
+        if (isNew)
         {
-            Token = jwt.GenerateToken(user),
-            User  = new UserDto { Id = user.Id, Email = user.Email, Name = user.Name, Role = user.Role },
-        };
+            var orgName = payload.Name + "'s Organization";
+            var org     = Organization.Create(orgName);
+            var member  = OrganizationMember.Create(org.Id, user.Id, OrgRoles.Owner);
+            await orgs.AddAsync(org, ct);
+            await orgs.AddMemberAsync(member, ct);
+
+            return new AuthResponse
+            {
+                Token = jwt.GenerateToken(user, org.Id, OrgRoles.Owner),
+                User  = new UserDto { Id = user.Id, Email = user.Email, Name = user.Name, Role = OrgRoles.Owner },
+                Organizations =
+                [
+                    new OrgMembershipDto { OrgId = org.Id, Name = org.Name, Slug = org.Slug, Role = OrgRoles.Owner, IsCurrent = true }
+                ],
+            };
+        }
+
+        // Usuário existente — reutiliza helper do LoginUseCase
+        var loginHelper = new LoginUseCase(users, orgs, joinRequests, jwt, null!);
+        return await loginHelper.BuildAuthResponseAsync(user, ct);
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Recix.Application.DTOs;
 using Recix.Application.Services;
 
@@ -13,6 +14,11 @@ public static class DashboardEndpoints
             .WithName("GetDashboardSummary")
             .WithSummary("Retorna resumo financeiro geral")
             .Produces<DashboardSummaryDto>();
+
+        group.MapGet("/overview", GetOverview)
+            .WithName("GetDashboardOverview")
+            .WithSummary("Retorna dados completos do Dashboard da UI")
+            .Produces<DashboardOverviewDto>();
     }
 
     private static async Task<IResult> GetSummary(
@@ -21,5 +27,15 @@ public static class DashboardEndpoints
     {
         var summary = await queryService.GetSummaryAsync(ct);
         return Results.Ok(summary);
+    }
+
+    private static async Task<IResult> GetOverview(
+        DashboardQueryService queryService,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        CancellationToken ct)
+    {
+        var overview = await queryService.GetOverviewAsync(fromDate, toDate, ct);
+        return Results.Ok(overview);
     }
 }

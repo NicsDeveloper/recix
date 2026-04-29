@@ -13,6 +13,13 @@ public sealed class PaymentEventConfiguration : IEntityTypeConfiguration<Payment
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).HasColumnName("id");
 
+        builder.Property(e => e.OrganizationId)
+            .HasColumnName("organization_id")
+            .IsRequired();
+
+        builder.HasIndex(e => e.OrganizationId)
+            .HasDatabaseName("ix_payment_events_organization_id");
+
         builder.Property(e => e.EventId)
             .HasColumnName("event_id")
             .HasMaxLength(100)

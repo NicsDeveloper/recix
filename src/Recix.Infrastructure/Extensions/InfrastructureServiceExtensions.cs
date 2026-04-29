@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,10 +22,16 @@ public static class InfrastructureServiceExtensions
         services.AddDbContext<RecixDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 
+        // ICurrentOrganization: HTTP requests usam claims do JWT; background services usam SystemOrgContext
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentOrganization, HttpCurrentOrganization>();
+
         services.AddScoped<IChargeRepository, ChargeRepository>();
         services.AddScoped<IPaymentEventRepository, PaymentEventRepository>();
         services.AddScoped<IReconciliationRepository, ReconciliationRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+        services.AddScoped<IOrganizationJoinRequestRepository, OrganizationJoinRequestRepository>();
         services.AddScoped<IAiInsightService, FakeAiInsightService>();
 
         services.AddScoped<ReconciliationEngine>();
@@ -35,6 +42,8 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<RegisterUseCase>();
         services.AddScoped<LoginUseCase>();
         services.AddScoped<GoogleAuthUseCase>();
+        services.AddScoped<SwitchOrgUseCase>();
+        services.AddScoped<ReviewJoinRequestUseCase>();
 
         // ─── Auth ─────────────────────────────────────────────────────────────────
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();

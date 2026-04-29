@@ -5,9 +5,10 @@ namespace Recix.Domain.Entities;
 
 public sealed class Charge
 {
-    public Guid Id { get; private set; }
-    public string ReferenceId { get; private set; } = default!;
-    public string ExternalId { get; private set; } = default!;
+    public Guid Id             { get; private set; }
+    public Guid OrganizationId { get; private set; }
+    public string ReferenceId  { get; private set; } = default!;
+    public string ExternalId   { get; private set; } = default!;
     public decimal Amount { get; private set; }
     public ChargeStatus Status { get; private set; }
     public DateTime ExpiresAt { get; private set; }
@@ -22,7 +23,7 @@ public sealed class Charge
 
     private Charge() { }
 
-    public static Charge Create(string referenceId, string externalId, decimal amount, DateTime expiresAt)
+    public static Charge Create(Guid organizationId, string referenceId, string externalId, decimal amount, DateTime expiresAt)
     {
         if (amount <= 0)
             throw new DomainException("Charge amount must be greater than zero.");
@@ -32,13 +33,14 @@ public sealed class Charge
 
         return new Charge
         {
-            Id = Guid.NewGuid(),
-            ReferenceId = referenceId,
-            ExternalId = externalId,
-            Amount = amount,
-            Status = ChargeStatus.Pending,
-            ExpiresAt = expiresAt,
-            CreatedAt = DateTime.UtcNow
+            Id             = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            ReferenceId    = referenceId,
+            ExternalId     = externalId,
+            Amount         = amount,
+            Status         = ChargeStatus.Pending,
+            ExpiresAt      = expiresAt,
+            CreatedAt      = DateTime.UtcNow,
         };
     }
 

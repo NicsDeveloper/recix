@@ -15,28 +15,28 @@ public sealed class ChargeTests
     [Fact]
     public void Create_WithZeroAmount_ThrowsDomainException()
     {
-        var act = () => Charge.Create("REF-001", "ext-001", 0m, FutureExpiry);
+        var act = () => Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 0m, FutureExpiry);
         act.Should().Throw<DomainException>().WithMessage("*greater than zero*");
     }
 
     [Fact]
     public void Create_WithNegativeAmount_ThrowsDomainException()
     {
-        var act = () => Charge.Create("REF-001", "ext-001", -10m, FutureExpiry);
+        var act = () => Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", -10m, FutureExpiry);
         act.Should().Throw<DomainException>().WithMessage("*greater than zero*");
     }
 
     [Fact]
     public void Create_WithPastExpiry_ThrowsDomainException()
     {
-        var act = () => Charge.Create("REF-001", "ext-001", 100m, PastExpiry);
+        var act = () => Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, PastExpiry);
         act.Should().Throw<DomainException>().WithMessage("*future*");
     }
 
     [Fact]
     public void Create_WithValidData_ReturnsPendingCharge()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 150.75m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 150.75m, FutureExpiry);
 
         charge.Id.Should().NotBeEmpty();
         charge.ReferenceId.Should().Be("REF-001");
@@ -51,7 +51,7 @@ public sealed class ChargeTests
     [Fact]
     public void IsExpired_WhenExpiryInFuture_ReturnsFalse()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.IsExpired().Should().BeFalse();
     }
 
@@ -68,7 +68,7 @@ public sealed class ChargeTests
     [Fact]
     public void MarkAsPaid_WhenPending_TransitionsToPaid()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
 
         charge.MarkAsPaid();
 
@@ -79,7 +79,7 @@ public sealed class ChargeTests
     [Fact]
     public void MarkAsPaid_WhenAlreadyPaid_ThrowsDomainException()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsPaid();
 
         var act = () => charge.MarkAsPaid();
@@ -90,7 +90,7 @@ public sealed class ChargeTests
     [Fact]
     public void MarkAsPaid_WhenDivergent_ThrowsDomainException()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsDivergent();
 
         var act = () => charge.MarkAsPaid();
@@ -103,7 +103,7 @@ public sealed class ChargeTests
     [Fact]
     public void MarkAsDivergent_WhenPending_TransitionsToDivergent()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
 
         charge.MarkAsDivergent();
 
@@ -124,7 +124,7 @@ public sealed class ChargeTests
     [Fact]
     public void MarkAsDivergent_WhenPaid_ThrowsDomainException()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsPaid();
 
         var act = () => charge.MarkAsDivergent();
@@ -147,7 +147,7 @@ public sealed class ChargeTests
     [Fact]
     public void MarkAsExpired_WhenPaid_ThrowsDomainException()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsPaid();
 
         var act = () => charge.MarkAsExpired();
@@ -160,14 +160,14 @@ public sealed class ChargeTests
     [Fact]
     public void CanReceivePayment_WhenPending_ReturnsTrue()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.CanReceivePayment().Should().BeTrue();
     }
 
     [Fact]
     public void CanReceivePayment_WhenPaid_ReturnsFalse()
     {
-        var charge = Charge.Create("REF-001", "ext-001", 100m, FutureExpiry);
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsPaid();
         charge.CanReceivePayment().Should().BeFalse();
     }
@@ -183,7 +183,7 @@ public sealed class ChargeTests
         // We need a charge that IsExpired() == true but was created validly.
         // We create with 1ms expiry so it expires almost immediately.
         // This can be flaky in very rare cases; for determinism we use reflection.
-        var charge = Charge.Create("REF-EXPIRED", "ext-expired", 100m, DateTime.UtcNow.AddSeconds(1));
+        var charge = Charge.Create(Guid.NewGuid(), "REF-EXPIRED", "ext-expired", 100m, DateTime.UtcNow.AddSeconds(1));
         // Set ExpiresAt in the past via reflection to simulate expiry
         var prop = typeof(Charge).GetProperty("ExpiresAt")!;
         prop.SetValue(charge, DateTime.UtcNow.AddMinutes(-10));

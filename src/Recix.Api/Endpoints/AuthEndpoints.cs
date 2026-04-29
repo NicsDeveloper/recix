@@ -70,21 +70,23 @@ public static class AuthEndpoints
 
     private static IResult Me(HttpContext ctx)
     {
-        var user = ctx.User;
-        var id    = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                 ?? user.FindFirst("sub")?.Value;
-        var email = user.FindFirst("email")?.Value
-                 ?? user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
-        var name  = user.FindFirst("name")?.Value
-                 ?? user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-        var role  = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Admin";
+        var claims = ctx.User;
+        var id     = claims.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                  ?? claims.FindFirst("sub")?.Value;
+        var email  = claims.FindFirst("email")?.Value
+                  ?? claims.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var name   = claims.FindFirst("name")?.Value
+                  ?? claims.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+        var role   = claims.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Member";
+        var orgId  = claims.FindFirst("org_id")?.Value;
 
-        return Results.Ok(new UserDto
+        return Results.Ok(new
         {
-            Id    = Guid.TryParse(id, out var guid) ? guid : Guid.Empty,
-            Email = email ?? "",
-            Name  = name  ?? "",
-            Role  = role,
+            id    = Guid.TryParse(id, out var guid) ? guid : Guid.Empty,
+            email = email ?? "",
+            name  = name  ?? "",
+            role,
+            organizationId = Guid.TryParse(orgId, out var oid) ? oid : (Guid?)null,
         });
     }
 }

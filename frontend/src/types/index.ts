@@ -74,6 +74,53 @@ export interface DashboardSummary {
   }
 }
 
+export interface FluxPoint {
+  label: string
+  received: number
+  expected: number
+  divergent: number
+}
+
+export interface RecentReconciliation {
+  id: string
+  status: ReconciliationStatus
+  reason: string
+  expectedAmount: number | null
+  paidAmount: number
+  chargeReferenceId: string | null
+  paymentEventId: string
+  createdAt: string
+}
+
+export interface RecentPaymentEvent {
+  eventId: string
+  referenceId: string | null
+  paidAmount: number
+  provider: string
+  status: PaymentEventStatus
+  paidAt: string
+  processedAt: string | null
+  createdAt: string
+}
+
+export interface DashboardAlert {
+  type: 'amountMismatch' | 'duplicatePayment' | 'paymentWithoutCharge'
+  count: number
+  lastDetectedAt: string
+  description: string
+  routeStatus: ReconciliationStatus
+}
+
+export interface DashboardOverview {
+  updatedAt: string
+  summary: DashboardSummary
+  previousPeriodSummary: DashboardSummary
+  fluxSeries: FluxPoint[]
+  recentReconciliations: RecentReconciliation[]
+  recentPaymentEvents: RecentPaymentEvent[]
+  alerts: DashboardAlert[]
+}
+
 export interface AiExplanation {
   reconciliationId: string
   explanation: string
@@ -106,9 +153,40 @@ export interface UserDto {
   role:  string
 }
 
+export interface OrgMembershipDto {
+  orgId:     string
+  name:      string
+  slug:      string
+  role:      string
+  isCurrent: boolean
+}
+
+export interface OrgSearchDto {
+  id:          string
+  name:        string
+  slug:        string
+  memberCount: number
+}
+
+export interface JoinRequestDto {
+  id:          string
+  orgId:       string
+  orgName:     string
+  orgSlug:     string
+  userId:      string
+  userName:    string
+  userEmail:   string
+  status:      'Pending' | 'Accepted' | 'Rejected'
+  message:     string | null
+  requestedAt: string
+  reviewedAt:  string | null
+}
+
 export interface AuthResponse {
-  token: string
-  user:  UserDto
+  token:              string
+  user:               UserDto
+  organizations:      OrgMembershipDto[]
+  pendingJoinRequest: JoinRequestDto | null
 }
 
 // ─── Request / Response ───────────────────────────────────────────────────────

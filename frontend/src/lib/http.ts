@@ -32,6 +32,16 @@ http.interceptors.response.use(
 
     const { status, data } = error.response as { status: number; data: unknown }
 
+    if (status === 401) {
+      // Token expirado ou inválido — limpa sessão e redireciona para login
+      localStorage.removeItem('recix_token')
+      localStorage.removeItem('recix_user')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+      return Promise.reject(new Error('Sessão expirada. Faça login novamente.'))
+    }
+
     if (status === 404) {
       return Promise.reject(new Error('Recurso não encontrado.'))
     }

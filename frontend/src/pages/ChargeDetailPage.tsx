@@ -132,7 +132,7 @@ export function ChargeDetailPage() {
         </button>
         <div>
           <p className="text-xs text-gray-500">Cobranças</p>
-          <p className="text-sm font-semibold text-white font-mono">{charge.referenceId}</p>
+          <p className="text-sm font-semibold text-gray-50 font-mono">{charge.referenceId}</p>
         </div>
       </div>
 
@@ -141,14 +141,14 @@ export function ChargeDetailPage() {
         <div className="flex items-start justify-between mb-4">
           <div>
             <p className="text-xs text-gray-500 mb-1">ReferenceId</p>
-            <p className="text-base font-bold text-white font-mono">{charge.referenceId}</p>
+            <p className="text-base font-bold text-gray-50 font-mono">{charge.referenceId}</p>
           </div>
           <StatusBadge status={charge.status} />
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <InfoField label="Valor">
-            <MoneyText value={charge.amount} className="text-lg font-bold text-white" />
+            <MoneyText value={charge.amount} className="text-lg font-bold text-gray-50" />
           </InfoField>
           <InfoField label="Criado em">
             <DateTimeText value={charge.createdAt} className="text-sm text-gray-300" />
@@ -164,7 +164,7 @@ export function ChargeDetailPage() {
         {/* PIX QR Code — only when available */}
         {charge.pixCopiaECola && charge.status === 'Pending' && (
           <div className="mt-6 pt-6 border-t border-gray-800 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-            <div className="bg-white p-3 rounded-xl shadow-lg flex-shrink-0">
+            <div className="bg-gray-800 border border-gray-700 p-3 rounded-xl shadow-lg flex-shrink-0">
               <QRCodeSVG
                 value={charge.pixCopiaECola}
                 size={160}

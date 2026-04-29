@@ -35,7 +35,7 @@ export function AiExplanationModal({ reconciliationId, status, onClose }: AiExpl
               <Sparkles size={15} className="text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-white">Explicação da IA</h2>
+              <h2 className="text-sm font-semibold text-gray-50">Explicação da IA</h2>
               <div className="mt-0.5">
                 <StatusBadge status={status} />
               </div>

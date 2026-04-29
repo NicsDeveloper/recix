@@ -227,6 +227,31 @@ Implementação: contador atômico baseado em contagem de cobranças do dia + 1.
 
 ---
 
+## Dashboard Overview Endpoint
+
+O endpoint `GET /dashboard/overview` é a fonte única para renderizar a dashboard da UI (KPIs, donut, problemas, fluxo financeiro, tabelas e alertas).
+
+### Responsabilidades
+- Retornar `summary` (métricas atuais) e `previousPeriodSummary` (mesmo intervalo anterior) para cálculo do delta do card “Total de Cobranças”.
+- Retornar `fluxSeries` (séries temporais) com pontos `received`, `expected` e `divergent`.
+- Retornar itens recentes para preencher:
+  - `Últimas Conciliações`
+  - `Últimos Eventos de Pagamento`
+- Retornar `alerts` com contagem e `lastDetectedAt` para exibir “há X minutos”.
+
+### Semântica de timestamps (MVP)
+- `updatedAt` da `Charge` é a principal fonte para indicar quando um status monetário muda (ex.: `Paid` e `Divergent`).
+- `createdAt` da `ReconciliationResult` é a principal fonte para “últimas conciliações” e para a data mais recente dos alertas (`lastDetectedAt`).
+- `paidAt`/`processedAt` do `PaymentEvent` é usada para o texto “Recebido em”.
+
+### Consistência com `DashboardQueryService.GetSummaryAsync`
+- A regra de cálculo dos totais monetários e contagens em `summary` segue exatamente a mesma lógica já usada em `GetSummaryAsync`.
+- Para a série do “Fluxo Financeiro”:
+  - `expected = received - divergent`
+  - `divergent` equivale à soma dos valores das cobranças em `Divergent` dentro do período.
+
+---
+
 ## Docker Compose
 
 Serviços:

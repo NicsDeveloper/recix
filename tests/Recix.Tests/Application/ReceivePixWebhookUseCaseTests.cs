@@ -19,7 +19,7 @@ public sealed class ReceivePixWebhookUseCaseTests
     };
 
     private static ReceivePixWebhookUseCase BuildUseCase(FakePaymentEventRepository repo) =>
-        new(repo, NullLogger<ReceivePixWebhookUseCase>.Instance);
+        new(repo, new FakeCurrentOrganization(), NullLogger<ReceivePixWebhookUseCase>.Instance);
 
     [Fact]
     public async Task Execute_NewEvent_ReturnsReceived()

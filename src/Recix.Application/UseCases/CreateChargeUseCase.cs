@@ -11,14 +11,18 @@ public sealed class CreateChargeUseCase
     private readonly IPixProvider _pixProvider;
     private readonly ILogger<CreateChargeUseCase> _logger;
 
+    private readonly ICurrentOrganization _currentOrg;
+
     public CreateChargeUseCase(
         IChargeRepository charges,
         IPixProvider pixProvider,
+        ICurrentOrganization currentOrg,
         ILogger<CreateChargeUseCase> logger)
     {
-        _charges = charges;
+        _charges     = charges;
         _pixProvider = pixProvider;
-        _logger = logger;
+        _currentOrg  = currentOrg;
+        _logger      = logger;
     }
 
     public async Task<CreateChargeResponse> ExecuteAsync(CreateChargeRequest request, CancellationToken cancellationToken = default)
@@ -29,6 +33,9 @@ public sealed class CreateChargeUseCase
         if (request.ExpiresInMinutes <= 0)
             throw new ArgumentException("ExpiresInMinutes must be greater than zero.", nameof(request));
 
+        var orgId = _currentOrg.OrganizationId
+            ?? throw new UnauthorizedAccessException("Contexto de organização não disponível.");
+
         var referenceId = await GenerateReferenceIdAsync(cancellationToken);
         var expiresAt   = DateTime.UtcNow.AddMinutes(request.ExpiresInMinutes);
 
@@ -36,7 +43,7 @@ public sealed class CreateChargeUseCase
         var pixResult = await _pixProvider.CreateChargeAsync(referenceId, request.Amount, expiresAt, cancellationToken);
 
         // ExternalId = txId do PSP (usado na conciliação por ReferenceId)
-        var charge = Charge.Create(referenceId, pixResult.TxId, request.Amount, expiresAt);
+        var charge = Charge.Create(orgId, referenceId, pixResult.TxId, request.Amount, expiresAt);
         charge.SetPixCopiaECola(pixResult.PixCopiaECola);
 
         await _charges.AddAsync(charge, cancellationToken);

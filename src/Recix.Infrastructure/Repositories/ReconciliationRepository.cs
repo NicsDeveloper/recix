@@ -7,19 +7,20 @@ using Recix.Infrastructure.Persistence;
 
 namespace Recix.Infrastructure.Repositories;
 
-public sealed class ReconciliationRepository : IReconciliationRepository
+public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganization currentOrg) : IReconciliationRepository
 {
-    private readonly RecixDbContext _db;
+    private IQueryable<ReconciliationResult> OrgQuery() =>
+        currentOrg.OrganizationId.HasValue
+            ? db.ReconciliationResults.Where(r => r.OrganizationId == currentOrg.OrganizationId.Value)
+            : db.ReconciliationResults;
 
-    public ReconciliationRepository(RecixDbContext db) => _db = db;
+    public Task<ReconciliationResult?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        OrgQuery().FirstOrDefaultAsync(r => r.Id == id, ct);
 
-    public Task<ReconciliationResult?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _db.ReconciliationResults.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-
-    public async Task AddAsync(ReconciliationResult result, CancellationToken cancellationToken = default)
+    public async Task AddAsync(ReconciliationResult result, CancellationToken ct = default)
     {
-        await _db.ReconciliationResults.AddAsync(result, cancellationToken);
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.ReconciliationResults.AddAsync(result, ct);
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<PagedResult<ReconciliationResult>> ListAsync(
@@ -28,32 +29,21 @@ public sealed class ReconciliationRepository : IReconciliationRepository
         Guid? paymentEventId,
         int page,
         int pageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken ct = default)
     {
-        var query = _db.ReconciliationResults.AsQueryable();
+        var query = OrgQuery();
 
-        if (status.HasValue)
-            query = query.Where(r => r.Status == status.Value);
+        if (status.HasValue)       query = query.Where(r => r.Status == status.Value);
+        if (chargeId.HasValue)     query = query.Where(r => r.ChargeId == chargeId.Value);
+        if (paymentEventId.HasValue) query = query.Where(r => r.PaymentEventId == paymentEventId.Value);
 
-        if (chargeId.HasValue)
-            query = query.Where(r => r.ChargeId == chargeId.Value);
-
-        if (paymentEventId.HasValue)
-            query = query.Where(r => r.PaymentEventId == paymentEventId.Value);
-
-        var total = await query.CountAsync(cancellationToken);
+        var total = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(r => r.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(ct);
 
-        return new PagedResult<ReconciliationResult>
-        {
-            Items = items,
-            TotalCount = total,
-            Page = page,
-            PageSize = pageSize
-        };
+        return new PagedResult<ReconciliationResult> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
 }

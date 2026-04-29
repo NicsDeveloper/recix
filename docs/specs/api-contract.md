@@ -313,6 +313,116 @@ GET /dashboard/summary
 
 ---
 
+## GET /dashboard/overview
+
+Retorna todos os dados necessários para renderizar o Dashboard da UI (KPIs, donut, problemas, fluxo financeiro, tabelas e alertas).
+
+### Request
+```http
+GET /dashboard/overview?fromDate=2026-04-01&toDate=2026-04-30
+```
+
+**Query params (opcionais):**
+- `fromDate` (opcional): ISO 8601 date (`yyyy-MM-dd`)
+- `toDate` (opcional): ISO 8601 date (`yyyy-MM-dd`)
+
+### Response — 200 OK
+```json
+{
+  "updatedAt": "2026-04-29T00:20:00Z",
+  "summary": {
+    "totalCharges": 100,
+    "paidCharges": 80,
+    "pendingCharges": 10,
+    "divergentCharges": 7,
+    "expiredCharges": 3,
+    "totalReceivedAmount": 10000.50,
+    "totalDivergentAmount": 450.00,
+    "reconciliationIssues": {
+      "amountMismatch": 3,
+      "duplicatePayment": 2,
+      "paymentWithoutCharge": 4,
+      "expiredChargePaid": 1,
+      "invalidReference": 0,
+      "processingError": 0
+    }
+  },
+  "previousPeriodSummary": {
+    "totalCharges": 88,
+    "paidCharges": 72,
+    "pendingCharges": 10,
+    "divergentCharges": 5,
+    "expiredCharges": 1,
+    "totalReceivedAmount": 9000.50,
+    "totalDivergentAmount": 350.00,
+    "reconciliationIssues": {
+      "amountMismatch": 2,
+      "duplicatePayment": 1,
+      "paymentWithoutCharge": 3,
+      "expiredChargePaid": 1,
+      "invalidReference": 0,
+      "processingError": 0
+    }
+  },
+  "fluxSeries": [
+    {
+      "label": "2026-04-29 10:00",
+      "received": 2100.50,
+      "expected": 2030.00,
+      "divergent": 70.50
+    }
+  ],
+  "recentReconciliations": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "AmountMismatch",
+      "reason": "Paid amount R$ 140,00 differs from expected R$ 150,75.",
+      "expectedAmount": 150.75,
+      "paidAmount": 140.00,
+      "chargeReferenceId": "RECIX-20260429-000001",
+      "paymentEventId": "evt_123abc",
+      "createdAt": "2026-04-29T00:18:06Z"
+    }
+  ],
+  "recentPaymentEvents": [
+    {
+      "eventId": "evt_123abc",
+      "referenceId": "RECIX-20260429-000001",
+      "paidAmount": 150.75,
+      "provider": "FakePixProvider",
+      "status": "Processed",
+      "paidAt": "2026-04-29T00:18:00Z",
+      "processedAt": "2026-04-29T00:18:06Z"
+    }
+  ],
+  "alerts": [
+    {
+      "type": "amountMismatch",
+      "count": 3,
+      "lastDetectedAt": "2026-04-29T00:18:06Z",
+      "description": "Amount Mismatch detectado no período.",
+      "routeStatus": "AmountMismatch"
+    },
+    {
+      "type": "duplicatePayment",
+      "count": 2,
+      "lastDetectedAt": "2026-04-29T00:18:01Z",
+      "description": "Pagamentos duplicados detectados no período.",
+      "routeStatus": "DuplicatePayment"
+    },
+    {
+      "type": "paymentWithoutCharge",
+      "count": 4,
+      "lastDetectedAt": "2026-04-29T00:17:59Z",
+      "description": "Pagamentos sem cobrança correspondente detectados.",
+      "routeStatus": "PaymentWithoutCharge"
+    }
+  ]
+}
+```
+
+---
+
 ## GET /ai/reconciliations/{id}/explanation
 
 Retorna explicação em linguagem natural para uma conciliação (IA fake).

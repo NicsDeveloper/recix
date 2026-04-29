@@ -4,5 +4,9 @@ namespace Recix.Application.Interfaces;
 
 public interface IJwtService
 {
-    string GenerateToken(User user);
+    /// <summary>
+    /// Gera um JWT.
+    /// organizationId == null → token sem contexto de org (ex: usuário aguardando aprovação).
+    /// </summary>
+    string GenerateToken(User user, Guid? organizationId, string? orgRole);
 }

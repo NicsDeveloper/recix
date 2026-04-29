@@ -17,13 +17,13 @@ export function ErrorState({
         <AlertCircle size={24} className="text-red-400" />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-gray-200">Erro ao carregar</p>
-        <p className="text-sm text-gray-400 mt-1 max-w-sm">{message}</p>
+        <p className="text-sm font-medium text-gray-50">Erro ao carregar</p>
+        <p className="text-sm text-gray-300 mt-1 max-w-sm">{message}</p>
       </div>
       {onRetry && (
         <button
           onClick={onRetry}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-200 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
         >
           <RefreshCw size={14} />
           Tentar novamente

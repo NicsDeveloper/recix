@@ -62,7 +62,7 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
       <div className="relative z-10 w-full max-w-md mx-4 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-          <h2 className="text-base font-semibold text-white">
+          <h2 className="text-base font-semibold text-gray-50">
             {createdCharge ? 'Cobrança Criada' : 'Nova Cobrança'}
           </h2>
           <button
@@ -85,12 +85,14 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
               {/* QR Code */}
               {createdCharge.pixCopiaECola ? (
                 <div className="flex flex-col items-center gap-4">
-                  <div className="bg-white p-3 rounded-xl shadow-lg">
+                    <div className="bg-gray-900 border border-gray-800 p-3 rounded-xl shadow-lg">
                     <QRCodeSVG
                       value={createdCharge.pixCopiaECola}
                       size={200}
                       level="M"
                       includeMargin={false}
+                        bgColor="#FFFFFF"
+                        fgColor="#000000"
                     />
                   </div>
                   <p className="text-xs text-gray-500 text-center">

@@ -13,19 +13,26 @@ public sealed class JwtService : IJwtService
 
     public JwtService(JwtOptions options) => _options = options;
 
-    public string GenerateToken(User user)
+    public string GenerateToken(User user, Guid? organizationId, string? orgRole)
     {
         var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claimList = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub,   user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(JwtRegisteredClaimNames.Name,  user.Name),
-            new Claim(ClaimTypes.Role,               user.Role),
-            new Claim(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Sub,   user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new(JwtRegisteredClaimNames.Name,  user.Name),
+            new(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
         };
+
+        if (organizationId.HasValue)
+            claimList.Add(new Claim("org_id", organizationId.Value.ToString()));
+
+        if (!string.IsNullOrEmpty(orgRole))
+            claimList.Add(new Claim(ClaimTypes.Role, orgRole));
+
+        var claims = claimList.ToArray();
 
         var token = new JwtSecurityToken(
             issuer:             _options.Issuer,

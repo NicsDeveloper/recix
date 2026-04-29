@@ -6,33 +6,34 @@ using Recix.Domain.Entities;
 
 namespace Recix.Application.UseCases;
 
-public sealed class ReceivePixWebhookUseCase
+public sealed class ReceivePixWebhookUseCase(
+    IPaymentEventRepository events,
+    ICurrentOrganization currentOrg,
+    ILogger<ReceivePixWebhookUseCase> logger)
 {
-    private readonly IPaymentEventRepository _events;
-    private readonly ILogger<ReceivePixWebhookUseCase> _logger;
-
-    public ReceivePixWebhookUseCase(IPaymentEventRepository events, ILogger<ReceivePixWebhookUseCase> logger)
+    public async Task<ReceivePixWebhookResponse> ExecuteAsync(
+        ReceivePixWebhookRequest request,
+        CancellationToken cancellationToken = default)
     {
-        _events = events;
-        _logger = logger;
-    }
-
-    public async Task<ReceivePixWebhookResponse> ExecuteAsync(ReceivePixWebhookRequest request, CancellationToken cancellationToken = default)
-    {
-        var existing = await _events.GetByEventIdAsync(request.EventId, cancellationToken);
+        var existing = await events.GetByEventIdAsync(request.EventId, cancellationToken);
         if (existing is not null)
         {
-            _logger.LogWarning("Duplicate webhook received: EventId={EventId}", request.EventId);
+            logger.LogWarning("Duplicate webhook received: EventId={EventId}", request.EventId);
             return new ReceivePixWebhookResponse
             {
                 Received = true,
-                EventId = request.EventId,
-                Status = "IgnoredDuplicate"
+                EventId  = request.EventId,
+                Status   = "IgnoredDuplicate"
             };
         }
 
-        var rawPayload = JsonSerializer.Serialize(request);
+        // Webhooks reais (EfiBank) usam contexto de sistema — todos os orgs
+        // Webhooks via simulador usam o org do usuário autenticado
+        var orgId = currentOrg.OrganizationId ?? Guid.Empty;   // Guid.Empty = webhook sem contexto de org (ex: EfiBank real)
+
+        var rawPayload   = JsonSerializer.Serialize(request);
         var paymentEvent = PaymentEvent.Create(
+            orgId,
             request.EventId,
             request.ExternalChargeId,
             request.ReferenceId,
@@ -41,16 +42,16 @@ public sealed class ReceivePixWebhookUseCase
             request.Provider,
             rawPayload);
 
-        await _events.AddAsync(paymentEvent, cancellationToken);
+        await events.AddAsync(paymentEvent, cancellationToken);
 
-        _logger.LogInformation("Webhook received: EventId={EventId} Provider={Provider} Amount={Amount}",
-            request.EventId, request.Provider, request.PaidAmount);
+        logger.LogInformation("Webhook received: EventId={EventId} Provider={Provider} Amount={Amount} OrgId={OrgId}",
+            request.EventId, request.Provider, request.PaidAmount, orgId);
 
         return new ReceivePixWebhookResponse
         {
             Received = true,
-            EventId = request.EventId,
-            Status = "Received"
+            EventId  = request.EventId,
+            Status   = "Received"
         };
     }
 }

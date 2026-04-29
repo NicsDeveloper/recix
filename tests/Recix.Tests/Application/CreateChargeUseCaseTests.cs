@@ -9,7 +9,8 @@ namespace Recix.Tests.Application;
 public sealed class CreateChargeUseCaseTests
 {
     private static CreateChargeUseCase BuildUseCase(FakeChargeRepository? repo = null) =>
-        new(repo ?? new FakeChargeRepository(), new FakePixProvider(), NullLogger<CreateChargeUseCase>.Instance);
+        new(repo ?? new FakeChargeRepository(), new FakePixProvider(),
+            new FakeCurrentOrganization(), NullLogger<CreateChargeUseCase>.Instance);
 
     [Fact]
     public async Task Execute_WithValidRequest_ReturnsCreatedCharge()

@@ -14,6 +14,13 @@ public sealed class ChargeConfiguration : IEntityTypeConfiguration<Charge>
         builder.HasKey(c => c.Id);
         builder.Property(c => c.Id).HasColumnName("id");
 
+        builder.Property(c => c.OrganizationId)
+            .HasColumnName("organization_id")
+            .IsRequired();
+
+        builder.HasIndex(c => c.OrganizationId)
+            .HasDatabaseName("ix_charges_organization_id");
+
         builder.Property(c => c.ReferenceId)
             .HasColumnName("reference_id")
             .HasMaxLength(50)

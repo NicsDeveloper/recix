@@ -2,8 +2,20 @@ import { http } from '../lib/http'
 import type { AuthResponse } from '../types'
 
 export const authService = {
-  async register(email: string, name: string, password: string): Promise<AuthResponse> {
-    const { data } = await http.post<AuthResponse>('/auth/register', { email, name, password })
+  async register(
+    email: string,
+    name: string,
+    password: string,
+    orgName?: string,
+    joinOrgId?: string,
+    message?: string,
+  ): Promise<AuthResponse> {
+    const { data } = await http.post<AuthResponse>('/auth/register', {
+      email, name, password,
+      orgName:   orgName   || undefined,
+      joinOrgId: joinOrgId || undefined,
+      message:   message   || undefined,
+    })
     return data
   },
 

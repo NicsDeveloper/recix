@@ -7,66 +7,52 @@ using Recix.Infrastructure.Persistence;
 
 namespace Recix.Infrastructure.Repositories;
 
-public sealed class PaymentEventRepository : IPaymentEventRepository
+public sealed class PaymentEventRepository(RecixDbContext db, ICurrentOrganization currentOrg) : IPaymentEventRepository
 {
-    private readonly RecixDbContext _db;
+    private IQueryable<PaymentEvent> OrgQuery() =>
+        currentOrg.OrganizationId.HasValue
+            ? db.PaymentEvents.Where(e => e.OrganizationId == currentOrg.OrganizationId.Value)
+            : db.PaymentEvents;
 
-    public PaymentEventRepository(RecixDbContext db) => _db = db;
+    public Task<PaymentEvent?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        OrgQuery().FirstOrDefaultAsync(e => e.Id == id, ct);
 
-    public Task<PaymentEvent?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _db.PaymentEvents.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+    // Idempotência: busca global por EventId (sem filtro de org) para detectar duplicatas entre providers
+    public Task<PaymentEvent?> GetByEventIdAsync(string eventId, CancellationToken ct = default) =>
+        db.PaymentEvents.FirstOrDefaultAsync(e => e.EventId == eventId, ct);
 
-    public Task<PaymentEvent?> GetByEventIdAsync(string eventId, CancellationToken cancellationToken = default) =>
-        _db.PaymentEvents.FirstOrDefaultAsync(e => e.EventId == eventId, cancellationToken);
+    public Task<IReadOnlyList<PaymentEvent>> GetByStatusAsync(PaymentEventStatus status, int batchSize, CancellationToken ct = default) =>
+        db.PaymentEvents                         // background service: sem filtro de org
+           .Where(e => e.Status == status)
+           .OrderBy(e => e.CreatedAt)
+           .Take(batchSize)
+           .ToListAsync(ct)
+           .ContinueWith<IReadOnlyList<PaymentEvent>>(t => t.Result, ct);
 
-    public async Task<IReadOnlyList<PaymentEvent>> GetByStatusAsync(
-        PaymentEventStatus status,
-        int batchSize,
-        CancellationToken cancellationToken = default)
+    public async Task AddAsync(PaymentEvent paymentEvent, CancellationToken ct = default)
     {
-        return await _db.PaymentEvents
-            .Where(e => e.Status == status)
-            .OrderBy(e => e.CreatedAt)
-            .Take(batchSize)
-            .ToListAsync(cancellationToken);
+        await db.PaymentEvents.AddAsync(paymentEvent, ct);
+        await db.SaveChangesAsync(ct);
     }
 
-    public async Task AddAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken = default)
+    public async Task UpdateAsync(PaymentEvent paymentEvent, CancellationToken ct = default)
     {
-        await _db.PaymentEvents.AddAsync(paymentEvent, cancellationToken);
-        await _db.SaveChangesAsync(cancellationToken);
+        db.PaymentEvents.Update(paymentEvent);
+        await db.SaveChangesAsync(ct);
     }
 
-    public async Task UpdateAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<PaymentEvent>> ListAsync(PaymentEventStatus? status, int page, int pageSize, CancellationToken ct = default)
     {
-        _db.PaymentEvents.Update(paymentEvent);
-        await _db.SaveChangesAsync(cancellationToken);
-    }
+        var query = OrgQuery();
+        if (status.HasValue) query = query.Where(e => e.Status == status.Value);
 
-    public async Task<PagedResult<PaymentEvent>> ListAsync(
-        PaymentEventStatus? status,
-        int page,
-        int pageSize,
-        CancellationToken cancellationToken = default)
-    {
-        var query = _db.PaymentEvents.AsQueryable();
-
-        if (status.HasValue)
-            query = query.Where(e => e.Status == status.Value);
-
-        var total = await query.CountAsync(cancellationToken);
+        var total = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(e => e.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(ct);
 
-        return new PagedResult<PaymentEvent>
-        {
-            Items = items,
-            TotalCount = total,
-            Page = page,
-            PageSize = pageSize
-        };
+        return new PagedResult<PaymentEvent> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
 }

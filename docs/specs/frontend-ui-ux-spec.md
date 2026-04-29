@@ -6,16 +6,17 @@
 ┌─────────────────────────────────────────────────────────┐
 │  Sidebar (240px fixo)  │  Main Content Area             │
 │                        │  ┌─────────────────────────┐   │
-│  [Logo RECIX]          │  │ Header (breadcrumb + ações)│  │
+│  [Logo RECIX]          │  │ Header (title + actions) │   │
 │                        │  └─────────────────────────┘   │
-│  Nav items:            │                                 │
-│  • Dashboard           │  Page Content                   │
+│  Nav items:            │  Page Content (light)        │
+│  • Dashboard           │                                 │
 │  • Cobranças           │                                 │
-│  • Pag. Eventos        │                                 │
+│  • Eventos de Pagamento│                                 │
 │  • Conciliações        │                                 │
+│  • Divergências        │                                 │
 │  • Simulador           │                                 │
 │                        │                                 │
-│  [Status da API]       │                                 │
+│  Rodapé (status/v.)   │                                 │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -28,11 +29,22 @@ Items:
 - **Cobranças** — ícone `CreditCard` — rota `/charges`
 - **Eventos de Pagamento** — ícone `Webhook` (ou `Zap`) — rota `/payment-events`
 - **Conciliações** — ícone `GitMerge` (ou `Scale`) — rota `/reconciliations`
-- **Simulador PIX** — ícone `PlayCircle` — rota `/webhooks/simulator`
+- **Divergências** — ícone `AlertTriangle` — rota `/reconciliations?status=AmountMismatch` (foco visual no MVP)
+- **Simulador PIX** — ícone `PlayCircle` — rota `/webhooks/simulator` (badge `Novo`)
+- **Relatórios** — ícone `FileText` — placeholder visual (sem rota no MVP)
+- **Alertas** — ícone `Bell` — placeholder visual (sem rota no MVP)
+- **Conexões** — ícone `Wifi` — placeholder visual (sem rota no MVP)
+- **Configurações** — ícone `Settings` — placeholder visual (sem rota no MVP)
 
-Item ativo: highlight com `bg-indigo-600/10 text-indigo-400 border-l-2 border-indigo-500`
+Item ativo: highlight com `bg-green-500/10 text-green-500 border-l-2 border-green-500/30`
 
-Rodapé da sidebar: indicador de status da API (verde = online, vermelho = offline)
+Rodapé da sidebar:
+- Título: `Sistema Operacional`
+- Subtexto: `Todos os serviços online`
+- Versão: `MVP 1.0.0`
+- Usuário: `Dev Recix - Administrador`
+
+O título/subtexto devem refletir o health da API (verde = online, vermelho = offline), mas mantendo o microcopy acima como prioridade visual.
 
 ---
 
@@ -51,33 +63,89 @@ Conteúdo:
 
 ### Dashboard (`/`)
 
-**Cards superiores (grid 2x3):**
+**Header da página:**
+- Título: `Dashboard`
+- Subtítulo: `Visão geral da saúde financeira em tempo real`
+- Date picker (faixa): `DD/MM/YYYY - DD/MM/YYYY`
+- Texto à direita: `Atualizado há Xs`
+- Botão primário: `Simular Evento` (rota `/webhooks/simulator`)
 
-```
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ Total        │ │ Pagas        │ │ Pendentes    │
-│ Cobranças    │ │              │ │              │
-│ [42]         │ │ [35] verde   │ │ [5] amarelo  │
-└──────────────┘ └──────────────┘ └──────────────┘
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ Divergentes  │ │ Valor        │ │ Valor        │
-│              │ │ Recebido     │ │ Divergente   │
-│ [2] vermelho │ │ R$ 5.250,00  │ │ R$ 400,00    │
-└──────────────┘ └──────────────┘ └──────────────┘
-```
+**KPI cards (linha 1 — 6 cards horizontais):**
+- 1) `Total de Cobranças`: valor numérico + subtítulo `+X% vs período anterior`
+- 2) `Cobranças Pagas`: valor numérico + `X%` (mini gráfico verde)
+- 3) `Cobranças Pendentes`: valor numérico + `X%` (mini gráfico amarelo)
+- 4) `Cobranças Divergentes`: valor numérico + `X%` (mini gráfico vermelho)
+- 5) `Valor Total Recebido`: `R$` + subtítulo `Em pagamentos`
+- 6) `Valor Divergente`: `R$` + subtítulo `Em divergências`
 
-**Seção de Problemas de Conciliação:**
-Grid 2x2 com mini-cards:
-- AmountMismatch — vermelho
-- DuplicatePayment — laranja
-- PaymentWithoutCharge — vermelho
-- ExpiredChargePaid — laranja
+Cards:
+- ícone outline à esquerda
+- padding médio
+- borda suave e shadow leve
 
-**Gráfico:**
-- `BarChart` do Recharts
-- X: status de conciliação (Matched, AmountMismatch, DuplicatePayment, ...)
-- Y: contagem
-- Cores semânticas por barra
+**Seção (linha 2 — 3 colunas):**
+
+**Coluna esquerda — Donut Chart:**
+- Título: `Visão Geral de Conciliações`
+- Donut com centro: `{totalCharges} Total`
+- Legenda (cores semânticas):
+  - `Matched` (verde)
+  - `AmountMismatch` (vermelho)
+  - `DuplicatePayment` (laranja)
+  - `PaymentWithoutCharge` (vermelho claro)
+  - `ExpiredChargePaid` (amarelo)
+  - `InvalidReference` (roxo)
+  - `ProcessingError` (cinza)
+- Botão: `Ver todas as conciliações` (rota `/reconciliations`)
+
+**Coluna centro — Problemas Detectados:**
+- Lista vertical com 4 itens:
+  1) Amount Mismatch
+  2) Duplicate Payment
+  3) Payment Without Charge
+  4) Expired Charge Paid
+- Cada item:
+  - ícone
+  - descrição curta
+  - barra horizontal proporcional
+  - valor numérico + percentual
+
+**Coluna direita — Fluxo Financeiro:**
+- Gráfico de linha (Recharts):
+  - `Recebido` (verde)
+  - `Esperado` (azul)
+  - `Divergente` (vermelho)
+- Resumo abaixo do gráfico:
+  - `Recebido: R$ ...`
+  - `Esperado: R$ ...`
+  - `Divergente: R$ ...`
+
+**Linha 3 — Tabelas:**
+1) `Últimas Conciliações`
+   - Status (badge colorido)
+   - Cobrança (`REF...`)
+   - Pagamento (`EVT...`)
+   - Valor Esperado
+   - Valor Pago
+   - Data
+2) `Últimos Eventos de Pagamento`
+   - EventId
+   - Referência
+   - Valor Pago
+   - Provedor
+   - Status (`Processed`)
+   - Recebido em
+
+**Rodapé/linha final — Alertas (cards horizontais):**
+- 1) `Divergência de Valor`
+- 2) `Pagamentos Duplicados`
+- 3) `Pagamentos sem Cobrança`
+
+Cada card:
+- ícone
+- descrição curta
+- tempo `há X minutos`
+- botão `Ver detalhes` (leva a `/reconciliations?status=<ReconciliationStatus>`)
 
 ---
 

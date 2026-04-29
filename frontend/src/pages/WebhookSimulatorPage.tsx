@@ -156,7 +156,7 @@ export function WebhookSimulatorPage() {
 
       {/* Form */}
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-        <h2 className="text-sm font-semibold text-white mb-5">Simular Pagamento PIX</h2>
+        <h2 className="text-sm font-semibold text-gray-50 mb-5">Simular Pagamento PIX</h2>
 
         <form
           onSubmit={(e) => {

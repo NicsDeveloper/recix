@@ -11,7 +11,10 @@ public sealed class RecixDbContext : DbContext
     public DbSet<Charge> Charges => Set<Charge>();
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<ReconciliationResult> ReconciliationResults => Set<ReconciliationResult>();
-    public DbSet<User> Users => Set<User>();
+    public DbSet<User>                      Users                    => Set<User>();
+    public DbSet<Organization>              Organizations            => Set<Organization>();
+    public DbSet<OrganizationMember>        OrganizationMembers      => Set<OrganizationMember>();
+    public DbSet<OrganizationJoinRequest>   OrganizationJoinRequests => Set<OrganizationJoinRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,5 +22,8 @@ public sealed class RecixDbContext : DbContext
         modelBuilder.ApplyConfiguration(new PaymentEventConfiguration());
         modelBuilder.ApplyConfiguration(new ReconciliationResultConfiguration());
         modelBuilder.ApplyConfiguration(new UserConfiguration());
+        modelBuilder.ApplyConfiguration(new OrganizationConfiguration());
+        modelBuilder.ApplyConfiguration(new OrganizationMemberConfiguration());
+        modelBuilder.ApplyConfiguration(new OrganizationJoinRequestConfiguration());
     }
 }

@@ -67,7 +67,8 @@ if (app.Environment.IsDevelopment())
 // ─── Endpoints ────────────────────────────────────────────────────────────────
 // Política de fallback (AddAuthorizationBuilder) já exige auth em tudo.
 // Endpoints públicos usam .AllowAnonymous() internamente.
-app.MapAuthEndpoints();     // /auth/* — AllowAnonymous internamente
+app.MapAuthEndpoints();         // /auth/* — AllowAnonymous internamente
+app.MapOrganizationEndpoints(); // /organizations/*
 app.MapChargeEndpoints();
 app.MapWebhookEndpoints();  // /webhooks/* — AllowAnonymous internamente (PSP externo)
 app.MapPaymentEventEndpoints();

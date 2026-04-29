@@ -13,6 +13,13 @@ public sealed class ReconciliationResultConfiguration : IEntityTypeConfiguration
         builder.HasKey(r => r.Id);
         builder.Property(r => r.Id).HasColumnName("id");
 
+        builder.Property(r => r.OrganizationId)
+            .HasColumnName("organization_id")
+            .IsRequired();
+
+        builder.HasIndex(r => r.OrganizationId)
+            .HasDatabaseName("ix_reconciliation_results_organization_id");
+
         builder.Property(r => r.ChargeId)
             .HasColumnName("charge_id");
 

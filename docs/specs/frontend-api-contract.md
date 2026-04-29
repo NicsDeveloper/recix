@@ -73,6 +73,52 @@ export interface DashboardSummary {
   }
 }
 
+export interface FluxPoint {
+  label: string
+  received: number
+  expected: number
+  divergent: number
+}
+
+export interface RecentReconciliation {
+  id: string
+  status: ReconciliationStatus
+  reason: string
+  expectedAmount: number | null
+  paidAmount: number
+  chargeReferenceId: string | null
+  paymentEventId: string
+  createdAt: string
+}
+
+export interface RecentPaymentEvent {
+  eventId: string
+  referenceId: string | null
+  paidAmount: number
+  provider: string
+  status: PaymentEventStatus
+  paidAt: string
+  processedAt: string | null
+}
+
+export interface DashboardAlert {
+  type: 'amountMismatch' | 'duplicatePayment' | 'paymentWithoutCharge'
+  count: number
+  lastDetectedAt: string
+  description: string
+  routeStatus: ReconciliationStatus
+}
+
+export interface DashboardOverview {
+  updatedAt: string
+  summary: DashboardSummary
+  previousPeriodSummary: DashboardSummary
+  fluxSeries: FluxPoint[]
+  recentReconciliations: RecentReconciliation[]
+  recentPaymentEvents: RecentPaymentEvent[]
+  alerts: DashboardAlert[]
+}
+
 export interface AiExplanation {
   reconciliationId: string
   explanation: string
@@ -146,6 +192,30 @@ Exemplo de response:
     "invalidReference": 0,
     "processingError": 0
   }
+}
+```
+
+---
+
+### GET /dashboard/overview
+
+```typescript
+// dashboardService.getOverview(params)
+// params: { fromDate?: string, toDate?: string }
+Response: DashboardOverview
+Status: 200
+```
+
+Exemplo de response:
+```json
+{
+  "updatedAt": "2026-04-29T00:20:00Z",
+  "summary": {},
+  "previousPeriodSummary": {},
+  "fluxSeries": [],
+  "recentReconciliations": [],
+  "recentPaymentEvents": [],
+  "alerts": []
 }
 ```
 

@@ -18,18 +18,20 @@ public sealed class ProcessPaymentEventUseCaseTests
             new ReconciliationEngine(_charges),
             NullLogger<ProcessPaymentEventUseCase>.Instance);
 
+    private static readonly Guid TestOrgId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
     private static Charge CreateActiveCharge(decimal amount = 150.75m) =>
-        Charge.Create("RECIX-20260429-000001", "ext-001", amount, DateTime.UtcNow.AddMinutes(30));
+        Charge.Create(TestOrgId, "RECIX-20260429-000001", "ext-001", amount, DateTime.UtcNow.AddMinutes(30));
 
     private static Charge CreateExpiredCharge(decimal amount = 150.75m)
     {
-        var charge = Charge.Create("RECIX-20260429-000001", "ext-001", amount, DateTime.UtcNow.AddSeconds(1));
+        var charge = Charge.Create(TestOrgId, "RECIX-20260429-000001", "ext-001", amount, DateTime.UtcNow.AddSeconds(1));
         typeof(Charge).GetProperty("ExpiresAt")!.SetValue(charge, DateTime.UtcNow.AddMinutes(-10));
         return charge;
     }
 
     private static PaymentEvent CreateEvent(string externalId = "ext-001", decimal paidAmount = 150.75m) =>
-        PaymentEvent.Create("evt_001", externalId, null, paidAmount, DateTime.UtcNow, "FakeProvider", "{}");
+        PaymentEvent.Create(TestOrgId, "evt_001", externalId, null, paidAmount, DateTime.UtcNow, "FakeProvider", "{}");
 
     // --- Cenário 1: Matched ---
 
@@ -89,7 +91,7 @@ public sealed class ProcessPaymentEventUseCaseTests
     [Fact]
     public async Task Process_PaymentWithoutCharge_ResultIsPaymentWithoutCharge()
     {
-        var evt = PaymentEvent.Create("evt_001", "nonexistent-ext", null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
+        var evt = PaymentEvent.Create(TestOrgId, "evt_001", "nonexistent-ext", null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
         await _events.AddAsync(evt);
 
         await BuildUseCase().ExecuteAsync(evt.Id);
@@ -119,7 +121,7 @@ public sealed class ProcessPaymentEventUseCaseTests
     [Fact]
     public async Task Process_InvalidReference_ResultIsInvalidReference()
     {
-        var evt = PaymentEvent.Create("evt_001", null, null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
+        var evt = PaymentEvent.Create(TestOrgId, "evt_001", null, null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
         await _events.AddAsync(evt);
 
         await BuildUseCase().ExecuteAsync(evt.Id);

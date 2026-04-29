@@ -8,7 +8,7 @@ namespace Recix.Tests.Domain;
 public sealed class PaymentEventTests
 {
     private static PaymentEvent BuildEvent(decimal paidAmount = 100m) =>
-        PaymentEvent.Create("evt_001", "ext-001", "REF-001", paidAmount, DateTime.UtcNow, "FakeProvider", "{}");
+        PaymentEvent.Create(Guid.NewGuid(), "evt_001", "ext-001", "REF-001", paidAmount, DateTime.UtcNow, "FakeProvider", "{}");
 
     // --- Create ---
 

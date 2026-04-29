@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { GitMerge, Sparkles } from 'lucide-react'
 import { reconciliationsService } from '../services/reconciliationsService'
 import { Header } from '../components/layout/Header'
@@ -41,6 +41,21 @@ export function ReconciliationsPage() {
   const [statusFilter, setStatusFilter] = useState<ReconciliationStatus | ''>('')
   const [chargeIdFilter, setChargeIdFilter] = useState('')
   const [aiTarget, setAiTarget] = useState<{ id: string; status: ReconciliationStatus } | null>(null)
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const rawStatus = searchParams.get('status')
+    const next = (() => {
+      if (!rawStatus) return ''
+      const match = statusOptions.find((o) => o.value === rawStatus)
+      return match ? match.value : ''
+    })()
+
+    // Evita setState “síncrono” dentro do effect (regra react-hooks/set-state-in-effect).
+    setTimeout(() => {
+      setStatusFilter(next)
+    }, 0)
+  }, [searchParams])
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['reconciliations', statusFilter, chargeIdFilter],

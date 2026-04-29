@@ -102,17 +102,22 @@
 
 ### Tarefas
 
-- [x] **T5.1** — Implementar `DashboardPage.tsx` com `useQuery` para `dashboardService.getSummary()`
-- [x] **T5.2** — Grid 2×3 de `StatCard`: Total Cobranças, Pagas, Pendentes, Divergentes, Valor Recebido, Valor Divergente
-- [x] **T5.3** — Seção "Problemas de Conciliação" — grid 2×4 com mini-cards coloridos
-- [x] **T5.4** — Gráfico `BarChart` (Recharts) com Cell por cor semântica + CustomTooltip
-- [x] **T5.5** — Estados: LoadingState, ErrorState (com refetch) ✓
-- [x] **T5.6** — Botão "Atualizar" no Header ✓
-- [x] **T5.7** — `npm run build` ✓ (0 erros)
+- [ ] **T5.1** — Implementar `DashboardPage.tsx` com `useQuery` para `dashboardService.getOverview()`
+- [ ] **T5.2** — KPI row com 6 cards (`Total de Cobranças`, `Pagas`, `Pendentes`, `Divergentes`, `Valor Total Recebido`, `Valor Divergente`) com ícone + mini gráfico + subtítulo
+- [ ] **T5.3** — Donut: `Recharts` com centro `{total} Total`, legenda por status e botão `Ver todas as conciliações`
+- [ ] **T5.4** — Lista `Problemas Detectados` com 4 itens e barras proporcionais (valor + %)
+- [ ] **T5.5** — `LineChart` (Recharts) do `Fluxo Financeiro` com linhas `Recebido`/`Esperado`/`Divergente` + resumo abaixo
+- [ ] **T5.6** — Tabelas:
+  - `Últimas Conciliações`
+  - `Últimos Eventos de Pagamento`
+- [ ] **T5.7** — Linha final com 3 cards de alertas (ícone, descrição, `há X minutos`, botão `Ver detalhes`)
+- [ ] **T5.8** — Estados: LoadingState, ErrorState (com refetch) e empty states por seção
+- [ ] **T5.9** — Botão primário/header `Simular Evento` + date range UI (`Atualizado há Xs`)
+- [ ] **T5.10** — `npm run build` ✓ (0 erros)
 
-**Critério de aceite:** Dashboard carrega dados reais da API; gráfico renderiza; zero-state funciona.
+**Critério de aceite:** Dashboard renderiza pixel-perfect do layout especificado; gráficos e tabelas usam dados reais da API; estados visuais cobrem loading/error/empty.
 
-**Specs de referência:** frontend-ui-ux-spec.md §Dashboard, frontend-api-contract.md §GET /dashboard/summary.
+**Specs de referência:** frontend-ui-ux-spec.md §Dashboard, frontend-api-contract.md §GET /dashboard/overview.
 
 ---
 

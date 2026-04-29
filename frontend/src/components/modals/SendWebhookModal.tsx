@@ -15,7 +15,7 @@ interface SendWebhookModalProps {
 export function SendWebhookModal({ initialValues, onClose }: SendWebhookModalProps) {
   const queryClient = useQueryClient()
 
-  const [eventId, setEventId] = useState(`evt_${Date.now()}`)
+  const [eventId, setEventId] = useState(() => `evt_${Date.now()}`)
   const [externalChargeId, setExternalChargeId] = useState(initialValues?.externalChargeId ?? '')
   const [referenceId, setReferenceId] = useState(initialValues?.referenceId ?? '')
   const [paidAmount, setPaidAmount] = useState(initialValues?.paidAmount ?? '')
@@ -53,8 +53,8 @@ export function SendWebhookModal({ initialValues, onClose }: SendWebhookModalPro
 
       <div className="relative z-10 w-full max-w-lg mx-4 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
-          <h2 className="text-base font-semibold text-white">Enviar Webhook Fake</h2>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
+          <h2 className="text-base font-semibold text-gray-50">Enviar Webhook Fake</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors">
             <X size={18} />
           </button>

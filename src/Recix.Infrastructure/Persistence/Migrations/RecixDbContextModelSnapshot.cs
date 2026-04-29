@@ -47,6 +47,10 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("external_id");
 
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
                     b.Property<string>("PixCopiaECola")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
@@ -73,6 +77,9 @@ namespace Recix.Infrastructure.Persistence.Migrations
                     b.HasIndex("ExternalId")
                         .HasDatabaseName("ix_charges_external_id");
 
+                    b.HasIndex("OrganizationId")
+                        .HasDatabaseName("ix_charges_organization_id");
+
                     b.HasIndex("ReferenceId")
                         .IsUnique()
                         .HasDatabaseName("ix_charges_reference_id");
@@ -81,6 +88,124 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_charges_status");
 
                     b.ToTable("charges", (string)null);
+                });
+
+            modelBuilder.Entity("Recix.Domain.Entities.Organization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Plan")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("Free")
+                        .HasColumnName("plan");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("slug");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("organizations", (string)null);
+                });
+
+            modelBuilder.Entity("Recix.Domain.Entities.OrganizationJoinRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Message")
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<Guid?>("ReviewedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reviewed_by_user_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_join_requests_user_id");
+
+                    b.HasIndex("OrganizationId", "Status")
+                        .HasDatabaseName("ix_join_requests_org_status");
+
+                    b.ToTable("organization_join_requests", (string)null);
+                });
+
+            modelBuilder.Entity("Recix.Domain.Entities.OrganizationMember", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("Member")
+                        .HasColumnName("role");
+
+                    b.HasKey("OrganizationId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("organization_members", (string)null);
                 });
 
             modelBuilder.Entity("Recix.Domain.Entities.PaymentEvent", b =>
@@ -104,6 +229,10 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("external_charge_id");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
 
                     b.Property<decimal>("PaidAmount")
                         .HasColumnType("numeric(18,2)")
@@ -145,6 +274,9 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_payment_events_event_id");
 
+                    b.HasIndex("OrganizationId")
+                        .HasDatabaseName("ix_payment_events_organization_id");
+
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_payment_events_status");
 
@@ -170,6 +302,10 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("expected_amount");
 
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
                     b.Property<decimal>("PaidAmount")
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("paid_amount");
@@ -193,6 +329,9 @@ namespace Recix.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ChargeId")
                         .HasDatabaseName("ix_reconciliation_results_charge_id");
+
+                    b.HasIndex("OrganizationId")
+                        .HasDatabaseName("ix_reconciliation_results_organization_id");
 
                     b.HasIndex("PaymentEventId")
                         .HasDatabaseName("ix_reconciliation_results_payment_event_id");
@@ -255,6 +394,49 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .HasFilter("google_id IS NOT NULL");
 
                     b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("Recix.Domain.Entities.OrganizationJoinRequest", b =>
+                {
+                    b.HasOne("Recix.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Recix.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Recix.Domain.Entities.OrganizationMember", b =>
+                {
+                    b.HasOne("Recix.Domain.Entities.Organization", "Organization")
+                        .WithMany("Members")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Recix.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Recix.Domain.Entities.Organization", b =>
+                {
+                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

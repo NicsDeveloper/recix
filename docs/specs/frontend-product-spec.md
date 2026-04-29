@@ -45,7 +45,7 @@ O frontend não é um produto de consumo. É uma **ferramenta de operação e de
 | "Preciso de curl/Postman para simular PIX" | Modal de criação de cobrança e envio de webhook na própria UI |
 | "Não sei se o webhook foi processado" | Tabela de Payment Events com status em tempo real |
 | "Por que essa cobrança ficou Divergent?" | Botão de explicação de IA diretamente na linha da conciliação |
-| "Quero uma visão geral do sistema rapidamente" | Dashboard com cards, valores e gráfico de distribuição |
+| "Quero uma visão geral do sistema rapidamente" | Dashboard com KPI cards, donut, fluxo financeiro e alertas |
 | "Preciso demonstrar o sistema para alguém" | Fluxo de demo completo navegável em < 3 minutos |
 
 ---
@@ -61,8 +61,12 @@ O frontend não é um produto de consumo. É uma **ferramenta de operação e de
 - `/webhooks/simulator` — Simulador de webhook PIX fake
 
 ### Funcionalidades incluídas
-- Cards financeiros do dashboard
-- Gráfico de distribuição por status de conciliação
+- KPI cards (linha 1 — 6 métricas financeiras)
+- Donut de visão geral de conciliações com legenda
+- Lista “Problemas Detectados” com barras proporcionais e percentuais
+- Gráfico de linha “Fluxo Financeiro” (Recebido/Esperado/Divergente)
+- Tabelas: “Últimas Conciliações” e “Últimos Eventos de Pagamento”
+- Cards de alertas (há X minutos) com botão “Ver detalhes”
 - Tabelas paginadas com filtros por status
 - Modal de criação de cobrança (amount + expiresInMinutes)
 - Modal/form de envio de webhook fake
@@ -71,6 +75,7 @@ O frontend não é um produto de consumo. É uma **ferramenta de operação e de
 - Formatação de moeda (BRL) e datas
 - Loading, erro e empty states em todas as telas
 - Layout com sidebar de navegação
+- Tema: sidebar escura fixa + conteúdo principal em tema claro
 
 ---
 
@@ -93,9 +98,10 @@ O frontend não é um produto de consumo. É uma **ferramenta de operação e de
 
 ### Jornada 1 — Visão geral operacional
 1. Abre `/` (Dashboard)
-2. Lê cards: total, pagas, pendentes, divergentes
-3. Vê gráfico de distribuição de conciliações
-4. Identifica se há problemas (AmountMismatch, Duplicate, etc.)
+2. Lê KPI cards: total, pagas, pendentes e divergentes
+3. Vê donut de conciliações e a lista de “Problemas Detectados”
+4. Vê o “Fluxo Financeiro” e os totais de Recebido/Esperado/Divergente
+5. Confirma problemas nas tabelas e nos cards de alertas
 
 ### Jornada 2 — Simular pagamento correto
 1. Vai para `/charges`

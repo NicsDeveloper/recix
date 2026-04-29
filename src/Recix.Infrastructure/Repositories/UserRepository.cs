@@ -7,6 +7,9 @@ namespace Recix.Infrastructure.Repositories;
 
 public sealed class UserRepository(RecixDbContext db) : IUserRepository
 {
+    public Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+
     public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
         db.Users.FirstOrDefaultAsync(u => u.Email == email.Trim().ToLowerInvariant(), ct);
 
