@@ -1,0 +1,124 @@
+name: API Smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  api-smoke:
+    name: API Smoke (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start stack
+        run: docker compose up -d --build
+
+      - name: Wait for API readiness
+        run: |
+          for i in {1..40}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/dashboard/summary || true)
+            if [ "$code" = "401" ] || [ "$code" = "200" ]; then
+              echo "API pronta (HTTP $code)."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "API não ficou pronta a tempo."
+          docker compose logs recix-api
+          exit 1
+
+      - name: Reliability smoke flow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          email="ci+$(date +%s)@recix.local"
+          password="Qa123456!"
+
+          register_payload=$(cat <<EOF
+          {"email":"$email","name":"CI Smoke","password":"$password","orgName":"Org CI Smoke"}
+          EOF
+          )
+
+          auth_json=$(curl -sS -X POST "http://localhost:5000/auth/register" \
+            -H "Content-Type: application/json" \
+            -d "$register_payload")
+
+          token=$(python -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' <<< "$auth_json")
+          if [ -z "$token" ]; then
+            echo "Falha ao registrar/login no smoke."
+            echo "$auth_json"
+            exit 1
+          fi
+
+          charge_payload='{"amount":123.45,"expiresInMinutes":30}'
+          charge_json=$(curl -sS -X POST "http://localhost:5000/charges" \
+            -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" \
+            -d "$charge_payload")
+
+          external_id=$(python -c 'import json,sys; print(json.load(sys.stdin).get("externalId",""))' <<< "$charge_json")
+          reference_id=$(python -c 'import json,sys; print(json.load(sys.stdin).get("referenceId",""))' <<< "$charge_json")
+          if [ -z "$external_id" ] || [ -z "$reference_id" ]; then
+            echo "Falha ao criar cobrança no smoke."
+            echo "$charge_json"
+            exit 1
+          fi
+
+          webhook_payload=$(cat <<EOF
+          {"eventId":"evt-ci-$(date +%s)","externalChargeId":"$external_id","referenceId":"$reference_id","paidAmount":123.45,"paidAt":"$(date -u +"%Y-%m-%dT%H:%M:%SZ")","provider":"FakePixProvider"}
+          EOF
+          )
+
+          webhook_json=$(curl -sS -X POST "http://localhost:5000/webhooks/pix" \
+            -H "Content-Type: application/json" \
+            -d "$webhook_payload")
+          webhook_status=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' <<< "$webhook_json")
+          if [ "$webhook_status" != "Received" ] && [ "$webhook_status" != "IgnoredDuplicate" ]; then
+            echo "Webhook retornou status inesperado."
+            echo "$webhook_json"
+            exit 1
+          fi
+
+          # Aguarda processamento assíncrono.
+          processed_ok=0
+          for i in {1..20}; do
+            events_json=$(curl -sS -X GET "http://localhost:5000/payment-events?status=Processed&page=1&pageSize=5" \
+              -H "Authorization: Bearer $token")
+            processed_count=$(python -c 'import json,sys; print(json.load(sys.stdin).get("totalCount",0))' <<< "$events_json")
+            if [ "$processed_count" -ge 1 ]; then
+              processed_ok=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$processed_ok" -ne 1 ]; then
+            echo "Evento não foi processado a tempo no smoke."
+            curl -sS -X GET "http://localhost:5000/payment-events?page=1&pageSize=20" -H "Authorization: Bearer $token"
+            exit 1
+          fi
+
+          metrics_json=$(curl -sS "http://localhost:5000/events/metrics")
+          has_metrics=$(python -c 'import json,sys; m=json.load(sys.stdin); print(1 if all(k in m for k in ["received","processed","failed","duplicates","stuckRecovered"]) else 0)' <<< "$metrics_json")
+          if [ "$has_metrics" -ne 1 ]; then
+            echo "Endpoint de métricas incompleto."
+            echo "$metrics_json"
+            exit 1
+          fi
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          docker compose logs recix-api
+          docker compose logs recix-db
+
+      - name: Shutdown stack
+        if: always()
+        run: docker compose down -v
