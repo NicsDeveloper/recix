@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Sparkles } from 'lucide-react'
+import { ArrowLeft, Sparkles, Copy, Check } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { chargesService } from '../services/chargesService'
 import { reconciliationsService } from '../services/reconciliationsService'
 import { StatusBadge } from '../components/ui/StatusBadge'
@@ -27,6 +28,13 @@ export function ChargeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [aiTarget, setAiTarget] = useState<{ id: string; status: ReconciliationStatus } | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const {
     data: charge,
@@ -152,6 +160,41 @@ export function ChargeDetailPage() {
             <span className="text-xs text-gray-400 font-mono break-all">{charge.externalId}</span>
           </InfoField>
         </div>
+
+        {/* PIX QR Code — only when available */}
+        {charge.pixCopiaECola && charge.status === 'Pending' && (
+          <div className="mt-6 pt-6 border-t border-gray-800 flex flex-col sm:flex-row items-center sm:items-start gap-6">
+            <div className="bg-white p-3 rounded-xl shadow-lg flex-shrink-0">
+              <QRCodeSVG
+                value={charge.pixCopiaECola}
+                size={160}
+                level="M"
+                includeMargin={false}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 mb-2">PIX Copia e Cola</p>
+              <div className="flex items-start gap-2">
+                <textarea
+                  readOnly
+                  value={charge.pixCopiaECola}
+                  rows={4}
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 px-3 py-2 text-xs font-mono resize-none focus:outline-none"
+                />
+                <button
+                  onClick={() => handleCopy(charge.pixCopiaECola!)}
+                  className="flex-shrink-0 p-2 text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                  title="Copiar código PIX"
+                >
+                  {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Escaneie o QR Code ou copie o código para pagar via PIX
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Reconciliations */}

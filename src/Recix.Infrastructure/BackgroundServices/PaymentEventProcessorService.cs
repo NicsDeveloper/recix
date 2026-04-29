@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Recix.Application.UseCases;
 using Recix.Application.Interfaces;
+using Recix.Application.UseCases;
 using Recix.Domain.Enums;
 
 namespace Recix.Infrastructure.BackgroundServices;
@@ -13,11 +13,16 @@ public sealed class PaymentEventProcessorService : BackgroundService
     private const int BatchSize = 10;
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IEventBroadcaster _broadcaster;
     private readonly ILogger<PaymentEventProcessorService> _logger;
 
-    public PaymentEventProcessorService(IServiceScopeFactory scopeFactory, ILogger<PaymentEventProcessorService> logger)
+    public PaymentEventProcessorService(
+        IServiceScopeFactory scopeFactory,
+        IEventBroadcaster broadcaster,
+        ILogger<PaymentEventProcessorService> logger)
     {
         _scopeFactory = scopeFactory;
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
@@ -64,6 +69,10 @@ public sealed class PaymentEventProcessorService : BackgroundService
             try
             {
                 await useCase.ExecuteAsync(evt.Id, stoppingToken);
+
+                // Notifica clientes SSE que houve mudança
+                _broadcaster.Publish(RecixEvent.PaymentEventUpdated(evt.Id));
+                _broadcaster.Publish(RecixEvent.ChargeUpdated(evt.Id)); // frontend invalida charges também
             }
             catch (Exception ex)
             {

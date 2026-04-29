@@ -9,7 +9,7 @@ namespace Recix.Tests.Application;
 public sealed class CreateChargeUseCaseTests
 {
     private static CreateChargeUseCase BuildUseCase(FakeChargeRepository? repo = null) =>
-        new(repo ?? new FakeChargeRepository(), NullLogger<CreateChargeUseCase>.Instance);
+        new(repo ?? new FakeChargeRepository(), new FakePixProvider(), NullLogger<CreateChargeUseCase>.Instance);
 
     [Fact]
     public async Task Execute_WithValidRequest_ReturnsCreatedCharge()
@@ -23,7 +23,7 @@ public sealed class CreateChargeUseCaseTests
         response.Amount.Should().Be(150.75m);
         response.Status.Should().Be("Pending");
         response.ReferenceId.Should().MatchRegex(@"^RECIX-\d{8}-\d{6}$");
-        response.ExternalId.Should().StartWith("fakepsp_");
+        response.ExternalId.Should().StartWith("fakepsp_RECIX");
         repo.All.Should().HaveCount(1);
     }
 

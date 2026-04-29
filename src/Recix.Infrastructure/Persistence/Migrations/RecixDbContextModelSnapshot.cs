@@ -47,6 +47,11 @@ namespace Recix.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("external_id");
 
+                    b.Property<string>("PixCopiaECola")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("pix_copia_e_cola");
+
                     b.Property<string>("ReferenceId")
                         .IsRequired()
                         .HasMaxLength(50)

@@ -14,6 +14,18 @@ export default defineConfig({
       '/webhooks': { target: API_TARGET, changeOrigin: true },
       '/dashboard': { target: API_TARGET, changeOrigin: true },
       '/ai': { target: API_TARGET, changeOrigin: true },
+      // SSE — desabilita buffering para que os eventos cheguem imediatamente
+      '/events': {
+        target: API_TARGET,
+        changeOrigin: true,
+        ws: false,
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // Garante que o proxy não bufferize o stream SSE
+            proxyRes.headers['cache-control'] = 'no-cache'
+          })
+        },
+      },
     },
   },
 })

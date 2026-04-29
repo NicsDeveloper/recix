@@ -46,6 +46,11 @@ public sealed class ChargeConfiguration : IEntityTypeConfiguration<Charge>
         builder.Property(c => c.UpdatedAt)
             .HasColumnName("updated_at");
 
+        builder.Property(c => c.PixCopiaECola)
+            .HasColumnName("pix_copia_e_cola")
+            .HasMaxLength(2000)
+            .IsRequired(false);
+
         builder.HasIndex(c => c.ReferenceId)
             .IsUnique()
             .HasDatabaseName("ix_charges_reference_id");

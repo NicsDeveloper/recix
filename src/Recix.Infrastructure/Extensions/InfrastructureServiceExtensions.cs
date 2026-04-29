@@ -29,7 +29,19 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ProcessPaymentEventUseCase>();
         services.AddScoped<DashboardQueryService>();
 
+        // PIX Provider: EfiBank (real) quando configurado, Fake caso contrário
+        services.Configure<EfiBankOptions>(configuration.GetSection(EfiBankOptions.SectionName));
+        var efiBankOptions = configuration.GetSection(EfiBankOptions.SectionName).Get<EfiBankOptions>() ?? new EfiBankOptions();
+        if (efiBankOptions.IsConfigured)
+            services.AddSingleton<IPixProvider, EfiBankPixProvider>();
+        else
+            services.AddSingleton<IPixProvider, FakePixProvider>();
+
+        // Singleton: mantém a lista de subscribers SSE entre requests
+        services.AddSingleton<IEventBroadcaster, InMemoryEventBroadcaster>();
+
         services.AddHostedService<PaymentEventProcessorService>();
+        services.AddHostedService<ExpirationSweepService>();
 
         return services;
     }

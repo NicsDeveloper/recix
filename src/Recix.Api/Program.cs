@@ -44,5 +44,6 @@ app.MapPaymentEventEndpoints();
 app.MapReconciliationEndpoints();
 app.MapDashboardEndpoints();
 app.MapAiEndpoints();
+app.MapEventEndpoints();
 
 app.Run();

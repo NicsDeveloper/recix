@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, Copy, Check } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { chargesService } from '../../services/chargesService'
+import type { Charge } from '../../types'
 
 interface CreateChargeModalProps {
   onClose: () => void
@@ -12,7 +14,8 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
 
   const [amount, setAmount] = useState('')
   const [expiresInMinutes, setExpiresInMinutes] = useState('30')
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [createdCharge, setCreatedCharge] = useState<Charge | null>(null)
+  const [copied, setCopied] = useState(false)
   const [errors, setErrors] = useState<Record<string, string[]>>({})
 
   const { mutate, isPending, error } = useMutation({
@@ -24,7 +27,7 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
     onSuccess: (charge) => {
       queryClient.invalidateQueries({ queryKey: ['charges'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
-      setSuccessMessage(`Cobrança criada com sucesso! ReferenceId: ${charge.referenceId}`)
+      setCreatedCharge(charge)
     },
     onError: (err: Error & { validationErrors?: Record<string, string[]> }) => {
       if (err.validationErrors) setErrors(err.validationErrors)
@@ -41,19 +44,27 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
     mutate()
   }
 
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={successMessage ? onClose : undefined}
+        onClick={createdCharge ? onClose : undefined}
       />
 
       {/* Modal */}
       <div className="relative z-10 w-full max-w-md mx-4 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-          <h2 className="text-base font-semibold text-white">Nova Cobrança</h2>
+          <h2 className="text-base font-semibold text-white">
+            {createdCharge ? 'Cobrança Criada' : 'Nova Cobrança'}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-300 transition-colors"
@@ -64,9 +75,58 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
 
         {/* Body */}
         <div className="px-6 py-5">
-          {successMessage ? (
-            <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-4 text-sm text-green-400">
-              {successMessage}
+          {createdCharge ? (
+            <div className="space-y-4">
+              {/* Success header */}
+              <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-sm text-green-400">
+                Cobrança <span className="font-mono font-semibold">{createdCharge.referenceId}</span> criada com sucesso!
+              </div>
+
+              {/* QR Code */}
+              {createdCharge.pixCopiaECola ? (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="bg-white p-3 rounded-xl shadow-lg">
+                    <QRCodeSVG
+                      value={createdCharge.pixCopiaECola}
+                      size={200}
+                      level="M"
+                      includeMargin={false}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 text-center">
+                    Escaneie o QR Code para pagar via PIX
+                  </p>
+
+                  {/* PIX Copia e Cola */}
+                  <div className="w-full">
+                    <p className="text-xs text-gray-500 mb-1.5">PIX Copia e Cola</p>
+                    <div className="flex items-start gap-2">
+                      <textarea
+                        readOnly
+                        value={createdCharge.pixCopiaECola}
+                        rows={3}
+                        className="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 px-3 py-2 text-xs font-mono resize-none focus:outline-none"
+                      />
+                      <button
+                        onClick={() => handleCopy(createdCharge.pixCopiaECola!)}
+                        className="flex-shrink-0 p-2 text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                        title="Copiar código"
+                      >
+                        {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Fake/dev mode — no real QR code */
+                <div className="rounded-lg bg-gray-800/60 border border-gray-700 p-4 text-center">
+                  <p className="text-xs text-gray-500 mb-1">Modo desenvolvimento</p>
+                  <p className="text-xs text-gray-400">
+                    QR Code disponível apenas com provedor PIX real (EfiBank configurado).
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2 font-mono">{createdCharge.referenceId}</p>
+                </div>
+              )}
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -139,7 +199,7 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
         </div>
 
         {/* Footer after success */}
-        {successMessage && (
+        {createdCharge && (
           <div className="px-6 pb-5">
             <button
               onClick={onClose}

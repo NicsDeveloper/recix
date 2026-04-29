@@ -14,6 +14,12 @@ public sealed class Charge
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// QR Code PIX (copia e cola) gerado pelo PSP.
+    /// Null quando criado via FakePixProvider (ambiente de desenvolvimento).
+    /// </summary>
+    public string? PixCopiaECola { get; private set; }
+
     private Charge() { }
 
     public static Charge Create(string referenceId, string externalId, decimal amount, DateTime expiresAt)
@@ -34,6 +40,13 @@ public sealed class Charge
             ExpiresAt = expiresAt,
             CreatedAt = DateTime.UtcNow
         };
+    }
+
+    public void SetPixCopiaECola(string pixCopiaECola)
+    {
+        if (string.IsNullOrWhiteSpace(pixCopiaECola))
+            throw new DomainException("PixCopiaECola cannot be empty.");
+        PixCopiaECola = pixCopiaECola;
     }
 
     public bool IsExpired() => DateTime.UtcNow > ExpiresAt;

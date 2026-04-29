@@ -9,4 +9,7 @@ public sealed class CreateChargeResponse
     public string Status { get; init; } = default!;
     public DateTime ExpiresAt { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    /// <summary>QR Code PIX (copia e cola). Null em modo fake/desenvolvimento.</summary>
+    public string? PixCopiaECola { get; init; }
 }

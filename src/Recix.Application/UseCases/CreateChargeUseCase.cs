@@ -8,11 +8,16 @@ namespace Recix.Application.UseCases;
 public sealed class CreateChargeUseCase
 {
     private readonly IChargeRepository _charges;
+    private readonly IPixProvider _pixProvider;
     private readonly ILogger<CreateChargeUseCase> _logger;
 
-    public CreateChargeUseCase(IChargeRepository charges, ILogger<CreateChargeUseCase> logger)
+    public CreateChargeUseCase(
+        IChargeRepository charges,
+        IPixProvider pixProvider,
+        ILogger<CreateChargeUseCase> logger)
     {
         _charges = charges;
+        _pixProvider = pixProvider;
         _logger = logger;
     }
 
@@ -25,29 +30,34 @@ public sealed class CreateChargeUseCase
             throw new ArgumentException("ExpiresInMinutes must be greater than zero.", nameof(request));
 
         var referenceId = await GenerateReferenceIdAsync(cancellationToken);
-        var externalId = $"fakepsp_{Guid.NewGuid():N}";
-        var expiresAt = DateTime.UtcNow.AddMinutes(request.ExpiresInMinutes);
+        var expiresAt   = DateTime.UtcNow.AddMinutes(request.ExpiresInMinutes);
 
-        var charge = Charge.Create(referenceId, externalId, request.Amount, expiresAt);
+        // Cria a cobrança no PSP (real ou fake) → obtém QR Code
+        var pixResult = await _pixProvider.CreateChargeAsync(referenceId, request.Amount, expiresAt, cancellationToken);
+
+        // ExternalId = txId do PSP (usado na conciliação por ReferenceId)
+        var charge = Charge.Create(referenceId, pixResult.TxId, request.Amount, expiresAt);
+        charge.SetPixCopiaECola(pixResult.PixCopiaECola);
 
         await _charges.AddAsync(charge, cancellationToken);
 
-        _logger.LogInformation("Charge created: {ChargeId} ReferenceId={ReferenceId} Amount={Amount}",
-            charge.Id, charge.ReferenceId, charge.Amount);
+        _logger.LogInformation(
+            "Charge created: {ChargeId} ReferenceId={ReferenceId} Amount={Amount} TxId={TxId}",
+            charge.Id, charge.ReferenceId, charge.Amount, pixResult.TxId);
 
         return new CreateChargeResponse
         {
-            Id = charge.Id,
-            ReferenceId = charge.ReferenceId,
-            ExternalId = charge.ExternalId,
-            Amount = charge.Amount,
-            Status = charge.Status.ToString(),
-            ExpiresAt = charge.ExpiresAt,
-            CreatedAt = charge.CreatedAt
+            Id            = charge.Id,
+            ReferenceId   = charge.ReferenceId,
+            ExternalId    = charge.ExternalId,
+            Amount        = charge.Amount,
+            Status        = charge.Status.ToString(),
+            ExpiresAt     = charge.ExpiresAt,
+            CreatedAt     = charge.CreatedAt,
+            PixCopiaECola = charge.PixCopiaECola
         };
     }
 
-    // Format: RECIX-{YYYYMMDD}-{NNNNNN} (decisions.md D002)
     private async Task<string> GenerateReferenceIdAsync(CancellationToken cancellationToken)
     {
         var today = DateTime.UtcNow.Date;

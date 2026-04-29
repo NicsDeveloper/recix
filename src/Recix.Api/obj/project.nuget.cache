@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "E+P6f93/0Sg=",
+  "dgSpecHash": "XY8YC9VpE8c=",
   "success": true,
   "projectFilePath": "C:\\Repos\\recix\\src\\Recix.Api\\Recix.Api.csproj",
   "expectedPackageFiles": [
@@ -13,6 +13,7 @@
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.caching.abstractions\\9.0.15\\microsoft.extensions.caching.abstractions.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.caching.memory\\9.0.15\\microsoft.extensions.caching.memory.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.configuration.abstractions\\9.0.15\\microsoft.extensions.configuration.abstractions.9.0.15.nupkg.sha512",
+    "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.configuration.binder\\9.0.15\\microsoft.extensions.configuration.binder.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.dependencyinjection\\9.0.15\\microsoft.extensions.dependencyinjection.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.15\\microsoft.extensions.dependencyinjection.abstractions.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.diagnostics.abstractions\\9.0.15\\microsoft.extensions.diagnostics.abstractions.9.0.15.nupkg.sha512",
@@ -21,6 +22,7 @@
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.logging\\9.0.15\\microsoft.extensions.logging.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.15\\microsoft.extensions.logging.abstractions.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.options\\9.0.15\\microsoft.extensions.options.9.0.15.nupkg.sha512",
+    "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.options.configurationextensions\\9.0.15\\microsoft.extensions.options.configurationextensions.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.15\\microsoft.extensions.primitives.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.openapi\\2.4.1\\microsoft.openapi.2.4.1.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\npgsql\\9.0.3\\npgsql.9.0.3.nupkg.sha512",

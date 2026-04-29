@@ -19,4 +19,7 @@ public interface IChargeRepository
         int page,
         int pageSize,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Retorna cobranças Pending cujo prazo já expirou.</summary>
+    Task<List<Charge>> GetExpiredPendingAsync(CancellationToken cancellationToken = default);
 }

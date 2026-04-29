@@ -12,6 +12,7 @@ public sealed class ChargeDto
     public DateTime ExpiresAt { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+    public string? PixCopiaECola { get; init; }
 
     public static ChargeDto FromEntity(Charge c) => new()
     {
@@ -22,6 +23,7 @@ public sealed class ChargeDto
         Status = c.Status.ToString(),
         ExpiresAt = c.ExpiresAt,
         CreatedAt = c.CreatedAt,
-        UpdatedAt = c.UpdatedAt
+        UpdatedAt = c.UpdatedAt,
+        PixCopiaECola = c.PixCopiaECola
     };
 }

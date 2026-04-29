@@ -33,5 +33,8 @@ public sealed class FakeChargeRepository : IChargeRepository
     public Task<PagedResult<Charge>> ListAsync(ChargeStatus? status, DateTime? fromDate, DateTime? toDate, int page, int pageSize, CancellationToken ct = default) =>
         Task.FromResult(new PagedResult<Charge> { Items = _store.ToList(), TotalCount = _store.Count, Page = page, PageSize = pageSize });
 
+    public Task<List<Charge>> GetExpiredPendingAsync(CancellationToken ct = default) =>
+        Task.FromResult(_store.Where(c => c.Status == ChargeStatus.Pending && c.ExpiresAt < DateTime.UtcNow).ToList());
+
     public IReadOnlyList<Charge> All => _store;
 }

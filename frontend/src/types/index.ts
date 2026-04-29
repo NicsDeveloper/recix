@@ -29,6 +29,7 @@ export interface Charge {
   expiresAt: string       // ISO 8601
   createdAt: string
   updatedAt: string | null
+  pixCopiaECola: string | null
 }
 
 export interface PaymentEvent {

@@ -41,6 +41,11 @@ public sealed class ChargeRepository : IChargeRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public Task<List<Charge>> GetExpiredPendingAsync(CancellationToken cancellationToken = default) =>
+        _db.Charges
+           .Where(c => c.Status == ChargeStatus.Pending && c.ExpiresAt < DateTime.UtcNow)
+           .ToListAsync(cancellationToken);
+
     public async Task<PagedResult<Charge>> ListAsync(
         ChargeStatus? status,
         DateTime? fromDate,
