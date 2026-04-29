@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Recix.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+093b1c980ccdcc48844a6c1676894e67e781bbe9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1a346b0c894c9a66d3c8894f2ce7ea55c74c492f")]
 [assembly: System.Reflection.AssemblyProductAttribute("Recix.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Recix.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

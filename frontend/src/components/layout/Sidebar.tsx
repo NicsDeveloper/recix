@@ -28,6 +28,7 @@ type NavItem =
       to: string
       badge?: string
       end?: boolean
+      adminOnly?: boolean
     }
   | { kind: 'placeholder'; label: string; icon: ComponentType<{ size?: number; className?: string }> }
 
@@ -48,6 +49,7 @@ const navItems: NavItem[] = [
     icon: PlayCircle,
     to: '/webhooks/simulator',
     badge: 'Novo',
+    adminOnly: true,
   },
   { kind: 'placeholder', label: 'Relatórios', icon: FileText },
   { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
@@ -90,6 +92,8 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => {
+          if (item.kind === 'link' && item.adminOnly && !isAdmin) return null
+
           if (item.kind === 'placeholder') {
             const Icon = item.icon
             return (

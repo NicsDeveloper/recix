@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Recix.Application.DTOs;
+using Recix.Application.Interfaces;
 using Recix.Application.UseCases;
 using Recix.Infrastructure.Services;
 
@@ -19,7 +20,8 @@ public static class WebhookEndpoints
             .Produces<ReceivePixWebhookResponse>(StatusCodes.Status202Accepted)
             .Produces<ReceivePixWebhookResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)
-            .AllowAnonymous();
+            .Produces(StatusCodes.Status403Forbidden)
+            .RequireAuthorization();
 
         // Endpoint real — chamado pela EfiBank quando um pagamento é confirmado
         group.MapPost("/efibank", ReceiveEfiBankWebhook)
@@ -35,9 +37,14 @@ public static class WebhookEndpoints
 
     private static async Task<IResult> ReceivePixWebhook(
         [FromBody] ReceivePixWebhookRequest request,
+        ICurrentOrganization currentOrg,
         ReceivePixWebhookUseCase useCase,
         CancellationToken ct)
     {
+        var isAdmin = currentOrg.Role is "Owner" or "Admin";
+        if (!isAdmin)
+            return Results.Forbid();
+
         if (string.IsNullOrWhiteSpace(request.EventId))
             return Results.BadRequest(new { type = "ValidationError", title = "EventId is required." });
 

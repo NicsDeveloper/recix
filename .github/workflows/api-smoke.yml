@@ -77,6 +77,7 @@ jobs:
           )
 
           webhook_json=$(curl -sS -X POST "http://localhost:5000/webhooks/pix" \
+            -H "Authorization: Bearer $token" \
             -H "Content-Type: application/json" \
             -d "$webhook_payload")
           webhook_status=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' <<< "$webhook_json")

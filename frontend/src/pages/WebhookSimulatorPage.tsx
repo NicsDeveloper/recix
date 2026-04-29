@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Navigate } from 'react-router-dom'
 import { RefreshCw, Loader2, CheckCircle, AlertTriangle, XCircle, Copy } from 'lucide-react'
 import { webhooksService } from '../services/webhooksService'
 import { Header } from '../components/layout/Header'
+import { useAuth } from '../contexts/AuthContext'
 
 interface FormState {
   eventId: string
@@ -76,7 +78,11 @@ const scenarios = [
 ]
 
 export function WebhookSimulatorPage() {
+  const { currentOrg } = useAuth()
+  const isAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
   const queryClient = useQueryClient()
+
+  if (!isAdmin) return <Navigate to="/" replace />
 
   const [form, setForm] = useState<FormState>({
     eventId: freshEventId(),
