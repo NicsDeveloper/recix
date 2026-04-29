@@ -1,0 +1,170 @@
+### RECIX Engine — Requests de exemplo
+### Base URL: http://localhost:5000
+### Compatível com: VS Code REST Client, JetBrains HTTP Client, Rider
+
+@baseUrl = http://localhost:5000
+
+# =============================================================================
+# CENÁRIO 1 — Criar cobrança normal
+# =============================================================================
+
+### 1.1 Criar cobrança de R$ 150,75 com 30 minutos de expiração
+POST {{baseUrl}}/charges
+Content-Type: application/json
+
+{
+  "amount": 150.75,
+  "expiresInMinutes": 30
+}
+
+# Guarde o "id" e "externalId" retornados para usar nos próximos requests
+# Exemplo: id = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+#          externalId = "fakepsp_abc123..."
+#          referenceId = "RECIX-20260429-000001"
+
+# =============================================================================
+# CENÁRIO 2 — Pagamento correto (Matched)
+# =============================================================================
+
+### 2.1 Enviar webhook com valor correto
+### Substitua externalChargeId pelo "externalId" retornado no passo 1.1
+POST {{baseUrl}}/webhooks/pix
+Content-Type: application/json
+
+{
+  "eventId": "evt_correct_001",
+  "externalChargeId": "SUBSTITUA_PELO_EXTERNAL_ID_DA_COBRANCA",
+  "referenceId": "SUBSTITUA_PELO_REFERENCE_ID_DA_COBRANCA",
+  "paidAmount": 150.75,
+  "paidAt": "2026-04-29T00:30:00Z",
+  "provider": "FakePixProvider"
+}
+
+# =============================================================================
+# CENÁRIO 3 — Pagamento duplicado (DuplicatePayment)
+# =============================================================================
+
+### 3.1 Enviar mesmo eventId novamente — deve retornar IgnoredDuplicate
+POST {{baseUrl}}/webhooks/pix
+Content-Type: application/json
+
+{
+  "eventId": "evt_correct_001",
+  "externalChargeId": "SUBSTITUA_PELO_EXTERNAL_ID_DA_COBRANCA",
+  "referenceId": "SUBSTITUA_PELO_REFERENCE_ID_DA_COBRANCA",
+  "paidAmount": 150.75,
+  "paidAt": "2026-04-29T00:30:00Z",
+  "provider": "FakePixProvider"
+}
+
+# =============================================================================
+# CENÁRIO 4 — Valor divergente (AmountMismatch)
+# =============================================================================
+
+### 4.1 Criar nova cobrança
+POST {{baseUrl}}/charges
+Content-Type: application/json
+
+{
+  "amount": 200.00,
+  "expiresInMinutes": 60
+}
+
+### 4.2 Enviar pagamento com valor menor
+POST {{baseUrl}}/webhooks/pix
+Content-Type: application/json
+
+{
+  "eventId": "evt_mismatch_001",
+  "externalChargeId": "SUBSTITUA_PELO_EXTERNAL_ID_DA_COBRANCA_200",
+  "paidAmount": 180.00,
+  "paidAt": "2026-04-29T00:31:00Z",
+  "provider": "FakePixProvider"
+}
+
+# =============================================================================
+# CENÁRIO 5 — Pagamento sem cobrança (PaymentWithoutCharge)
+# =============================================================================
+
+### 5.1 Enviar pagamento com ID inexistente
+POST {{baseUrl}}/webhooks/pix
+Content-Type: application/json
+
+{
+  "eventId": "evt_no_charge_001",
+  "externalChargeId": "fakepsp_nonexistent_id_99999",
+  "paidAmount": 75.00,
+  "paidAt": "2026-04-29T00:32:00Z",
+  "provider": "FakePixProvider"
+}
+
+# =============================================================================
+# CENÁRIO 6 — Cobrança expirada (ExpiredChargePaid)
+# =============================================================================
+
+### 6.1 Criar cobrança com expiração muito curta (1 minuto)
+POST {{baseUrl}}/charges
+Content-Type: application/json
+
+{
+  "amount": 50.00,
+  "expiresInMinutes": 1
+}
+
+### 6.2 Aguarde a cobrança expirar (~1 minuto), depois envie:
+### (O job de expiração marcará automaticamente ou o sistema detectará ao conciliar)
+POST {{baseUrl}}/webhooks/pix
+Content-Type: application/json
+
+{
+  "eventId": "evt_expired_001",
+  "externalChargeId": "SUBSTITUA_PELO_EXTERNAL_ID_DA_COBRANCA_50",
+  "paidAmount": 50.00,
+  "paidAt": "2026-04-29T00:33:00Z",
+  "provider": "FakePixProvider"
+}
+
+# =============================================================================
+# CONSULTAS
+# =============================================================================
+
+### 7. Listar todas as cobranças
+GET {{baseUrl}}/charges
+
+### 7.1 Filtrar cobranças pendentes
+GET {{baseUrl}}/charges?status=Pending
+
+### 7.2 Filtrar cobranças divergentes
+GET {{baseUrl}}/charges?status=Divergent
+
+### 7.3 Buscar cobrança por ID
+### GET {{baseUrl}}/charges/SUBSTITUA_PELO_ID_DA_COBRANCA
+
+### 8. Listar eventos de pagamento
+GET {{baseUrl}}/payment-events
+
+### 8.1 Filtrar eventos processados
+GET {{baseUrl}}/payment-events?status=Processed
+
+### 9. Listar conciliações
+GET {{baseUrl}}/reconciliations
+
+### 9.1 Filtrar por status
+GET {{baseUrl}}/reconciliations?status=AmountMismatch
+
+### 10. Dashboard — resumo financeiro
+GET {{baseUrl}}/dashboard/summary
+
+# =============================================================================
+# IA INSIGHTS
+# =============================================================================
+
+### 11. Explicação de divergência por IA fake
+### Substitua pelo ID de uma ReconciliationResult com status divergente
+### GET {{baseUrl}}/ai/reconciliations/SUBSTITUA_PELO_ID_DA_RECONCILIACAO/explanation
+
+### 12. Resumo diário por IA fake
+GET {{baseUrl}}/ai/summary/daily
+
+### 12.1 Resumo de uma data específica
+GET {{baseUrl}}/ai/summary/daily?date=2026-04-29

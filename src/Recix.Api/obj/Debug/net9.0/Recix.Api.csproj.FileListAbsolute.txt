@@ -54,3 +54,7 @@ C:\Repos\recix\src\Recix.Api\obj\Debug\net9.0\refint\Recix.Api.dll
 C:\Repos\recix\src\Recix.Api\obj\Debug\net9.0\Recix.Api.pdb
 C:\Repos\recix\src\Recix.Api\obj\Debug\net9.0\Recix.Api.genruntimeconfig.cache
 C:\Repos\recix\src\Recix.Api\obj\Debug\net9.0\ref\Recix.Api.dll
+C:\Repos\recix\src\Recix.Api\obj\Debug\net9.0\Recix.Api.sourcelink.json
+C:\Repos\recix\src\Recix.Api\bin\Debug\net9.0\Microsoft.Extensions.Diagnostics.Abstractions.dll
+C:\Repos\recix\src\Recix.Api\bin\Debug\net9.0\Microsoft.Extensions.FileProviders.Abstractions.dll
+C:\Repos\recix\src\Recix.Api\bin\Debug\net9.0\Microsoft.Extensions.Hosting.Abstractions.dll

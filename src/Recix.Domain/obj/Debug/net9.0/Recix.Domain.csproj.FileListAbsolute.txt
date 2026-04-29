@@ -9,3 +9,4 @@ C:\Repos\recix\src\Recix.Domain\obj\Debug\net9.0\Recix.Domain.dll
 C:\Repos\recix\src\Recix.Domain\obj\Debug\net9.0\refint\Recix.Domain.dll
 C:\Repos\recix\src\Recix.Domain\obj\Debug\net9.0\Recix.Domain.pdb
 C:\Repos\recix\src\Recix.Domain\obj\Debug\net9.0\ref\Recix.Domain.dll
+C:\Repos\recix\src\Recix.Domain\obj\Debug\net9.0\Recix.Domain.sourcelink.json

@@ -120,3 +120,7 @@ C:\Repos\recix\tests\Recix.Tests\obj\Debug\net9.0\refint\Recix.Tests.dll
 C:\Repos\recix\tests\Recix.Tests\obj\Debug\net9.0\Recix.Tests.pdb
 C:\Repos\recix\tests\Recix.Tests\obj\Debug\net9.0\Recix.Tests.genruntimeconfig.cache
 C:\Repos\recix\tests\Recix.Tests\obj\Debug\net9.0\ref\Recix.Tests.dll
+C:\Repos\recix\tests\Recix.Tests\obj\Debug\net9.0\Recix.Tests.sourcelink.json
+C:\Repos\recix\tests\Recix.Tests\bin\Debug\net9.0\Microsoft.Extensions.Diagnostics.Abstractions.dll
+C:\Repos\recix\tests\Recix.Tests\bin\Debug\net9.0\Microsoft.Extensions.FileProviders.Abstractions.dll
+C:\Repos\recix\tests\Recix.Tests\bin\Debug\net9.0\Microsoft.Extensions.Hosting.Abstractions.dll

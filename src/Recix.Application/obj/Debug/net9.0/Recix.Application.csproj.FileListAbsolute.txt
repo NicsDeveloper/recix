@@ -13,3 +13,4 @@ C:\Repos\recix\src\Recix.Application\obj\Debug\net9.0\Recix.Application.dll
 C:\Repos\recix\src\Recix.Application\obj\Debug\net9.0\refint\Recix.Application.dll
 C:\Repos\recix\src\Recix.Application\obj\Debug\net9.0\Recix.Application.pdb
 C:\Repos\recix\src\Recix.Application\obj\Debug\net9.0\ref\Recix.Application.dll
+C:\Repos\recix\src\Recix.Application\obj\Debug\net9.0\Recix.Application.sourcelink.json

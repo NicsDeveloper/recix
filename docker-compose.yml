@@ -1,0 +1,34 @@
+services:
+  recix-db:
+    image: postgres:16-alpine
+    container_name: recix-db
+    environment:
+      POSTGRES_DB: recix
+      POSTGRES_USER: recix
+      POSTGRES_PASSWORD: recix123
+    ports:
+      - "5432:5432"
+    volumes:
+      - recix-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recix -d recix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  recix-api:
+    build:
+      context: .
+      dockerfile: src/Recix.Api/Dockerfile
+    container_name: recix-api
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=recix-db;Port=5432;Database=recix;Username=recix;Password=recix123"
+    depends_on:
+      recix-db:
+        condition: service_healthy
+
+volumes:
+  recix-db-data:

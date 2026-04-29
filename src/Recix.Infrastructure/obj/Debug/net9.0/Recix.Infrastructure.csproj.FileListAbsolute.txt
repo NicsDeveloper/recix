@@ -17,3 +17,4 @@ C:\Repos\recix\src\Recix.Infrastructure\obj\Debug\net9.0\refint\Recix.Infrastruc
 C:\Repos\recix\src\Recix.Infrastructure\obj\Debug\net9.0\Recix.Infrastructure.pdb
 C:\Repos\recix\src\Recix.Infrastructure\obj\Debug\net9.0\Recix.Infrastructure.genruntimeconfig.cache
 C:\Repos\recix\src\Recix.Infrastructure\obj\Debug\net9.0\ref\Recix.Infrastructure.dll
+C:\Repos\recix\src\Recix.Infrastructure\obj\Debug\net9.0\Recix.Infrastructure.sourcelink.json

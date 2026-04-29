@@ -3,7 +3,17 @@
     "allow": [
       "Bash(dotnet new *)",
       "Bash(dotnet sln *)",
-      "Bash(dotnet add *)"
+      "Bash(dotnet add *)",
+      "Bash(dotnet ef *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/swagger/v1/swagger.json)",
+      "Bash(curl -s http://localhost:5000/dashboard/summary)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:5000/webhooks/pix -H 'Content-Type: application/json' -d '{\"eventId\": \"evt_matched_001\", \"externalChargeId\": \"fakepsp_65ab154927084c66a4ab73ee90f23b2c\", \"paidAmount\": 150.75, \"paidAt\": \"2026-04-29T03:55:00Z\", \"provider\": \"FakePixProvider\"}')",
+      "Bash(curl -s http://localhost:5000/charges/440b36e7-d81b-4ded-9ea3-5c5bf8b08ce5)",
+      "Bash(curl -s -X POST http://localhost:5000/webhooks/pix -H 'Content-Type: application/json' -d '{\"eventId\": \"evt_mismatch_002\", \"externalChargeId\": \"fakepsp_f7bc02ae540b4814b63b668e2ecf6e3d\", \"paidAmount\": 140.00, \"paidAt\": \"2026-04-29T03:56:00Z\", \"provider\": \"FakePixProvider\"}')",
+      "Bash(curl -s http://localhost:5000/reconciliations)",
+      "Bash(curl -s \"http://localhost:5000/ai/summary/daily\")",
+      "Bash(curl -s \"http://localhost:5000/payment-events?status=Processed\")"
     ]
   }
 }
