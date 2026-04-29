@@ -150,9 +150,6 @@ public sealed class DashboardQueryService
             .Where(r => r.CreatedAt >= start && r.CreatedAt < endInclusive.AddDays(1))
             .ToList();
 
-        if (charges.Count == 0 && reconciliations.Count == 0)
-            return await GetSummaryAsync(cancellationToken);
-
         return new DashboardSummaryDto
         {
             TotalCharges = charges.Count,
@@ -311,12 +308,7 @@ public sealed class DashboardQueryService
             .ToList();
 
         if (filtered.Count == 0)
-        {
-            filtered = processedPage.Items
-                .OrderByDescending(e => e.PaidAt)
-                .Take(5)
-                .ToList();
-        }
+            return Array.Empty<RecentPaymentEventDto>();
 
         return filtered.Select(e => new RecentPaymentEventDto
         {

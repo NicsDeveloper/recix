@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Recix.Domain.Exceptions;
 
 namespace Recix.Api.Middleware;
@@ -41,6 +42,15 @@ public sealed class ErrorHandlingMiddleware
         catch (DomainException ex)
         {
             await WriteJsonAsync(context, StatusCodes.Status400BadRequest, "DomainError", ex.Message);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Database update error.");
+            await WriteJsonAsync(
+                context,
+                StatusCodes.Status400BadRequest,
+                "PersistenceError",
+                "Não foi possível concluir a operação no banco de dados.");
         }
         catch (Exception ex)
         {

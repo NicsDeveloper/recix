@@ -61,17 +61,22 @@ export function ReconciliationDonut({
 
         <div className="flex-1 min-w-0">
           <div className="grid gap-3">
-            {items.map((it) => (
-              <div key={it.key} className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: it.color }}
-                  />
-                  <span className="text-sm text-gray-200 truncate">{it.label}</span>
+            {chartData.length === 0 ? (
+              <div className="text-sm text-gray-500">Sem dados de conciliação no período selecionado.</div>
+            ) : (
+              chartData.map((it) => (
+                <div key={it.key} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: it.color }}
+                    />
+                    <span className="text-sm text-gray-200 truncate">{it.label}</span>
+                  </div>
+                  <span className="text-xs font-semibold text-gray-400">{it.value.toLocaleString('pt-BR')}</span>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           <div className="mt-6">

@@ -11,6 +11,7 @@ public interface IPaymentEventRepository
     Task<IReadOnlyList<PaymentEvent>> GetByStatusAsync(PaymentEventStatus status, int batchSize, CancellationToken cancellationToken = default);
     Task AddAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken = default);
     Task UpdateAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken = default);
+    Task<int> RecoverStuckProcessingAsync(TimeSpan threshold, CancellationToken cancellationToken = default);
     Task<PagedResult<PaymentEvent>> ListAsync(
         PaymentEventStatus? status,
         int page,

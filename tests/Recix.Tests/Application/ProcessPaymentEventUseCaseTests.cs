@@ -12,10 +12,12 @@ public sealed class ProcessPaymentEventUseCaseTests
     private readonly FakeChargeRepository _charges = new();
     private readonly FakePaymentEventRepository _events = new();
     private readonly FakeReconciliationRepository _reconciliations = new();
+    private readonly PaymentReliabilityMetrics _metrics = new();
 
     private ProcessPaymentEventUseCase BuildUseCase() =>
         new(_events, _charges, _reconciliations,
             new ReconciliationEngine(_charges),
+            _metrics,
             NullLogger<ProcessPaymentEventUseCase>.Instance);
 
     private static readonly Guid TestOrgId = Guid.Parse("11111111-1111-1111-1111-111111111111");

@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type { ComponentType } from 'react'
 import {
@@ -50,6 +50,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const { currentOrg } = useAuth()
+  const location = useLocation()
 
   // Badge de solicitações pendentes — só para Owner/Admin
   const isAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
@@ -125,14 +126,17 @@ export function Sidebar() {
               key={item.to}
               to={item.to}
               end={item.end ?? item.to === '/'}
-              className={({ isActive }) =>
-                [
+              className={({ isActive }) => {
+                const requiresAmountMismatchQuery = item.to.includes('?status=AmountMismatch')
+                const hasAmountMismatchQuery = new URLSearchParams(location.search).get('status') === 'AmountMismatch'
+                const activeState = requiresAmountMismatchQuery ? isActive && hasAmountMismatchQuery : isActive && !hasAmountMismatchQuery
+                return [
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
-                  isActive
+                  activeState
                     ? 'bg-green-500/10 text-green-500 border-l-2 border-green-500/30 pl-[10px]'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 border-l-2 border-transparent pl-[10px]',
                 ].join(' ')
-              }
+              }}
             >
               <Icon size={15} className="flex-shrink-0" />
               <span className="truncate">{item.label}</span>

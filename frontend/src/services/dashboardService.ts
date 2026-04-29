@@ -13,8 +13,8 @@ export const dashboardService = {
     const normalizedParams =
       params && (params.fromDate || params.toDate)
         ? {
-            fromDate: params.fromDate ? normalizeDateParam(params.fromDate) : undefined,
-            toDate: params.toDate ? normalizeDateParam(params.toDate) : undefined,
+            fromDate: params.fromDate ? normalizeDateParam(params.fromDate, 'start') : undefined,
+            toDate: params.toDate ? normalizeDateParam(params.toDate, 'end') : undefined,
           }
         : undefined
 
@@ -23,9 +23,8 @@ export const dashboardService = {
   },
 }
 
-function normalizeDateParam(value: string) {
+function normalizeDateParam(value: string, boundary: 'start' | 'end') {
   // Se já vier com horário (ex.: ISO completo), não mexe.
   if (value.includes('T')) return value
-  // Interpreta como data no início do dia UTC.
-  return `${value}T00:00:00Z`
+  return boundary === 'start' ? `${value}T00:00:00Z` : `${value}T23:59:59Z`
 }

@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Recix.Application.Exceptions;
 using Recix.Application.DTOs;
 using Recix.Application.Interfaces;
 using Recix.Domain.Entities;
@@ -31,14 +33,38 @@ public sealed class PaymentEventRepository(RecixDbContext db, ICurrentOrganizati
 
     public async Task AddAsync(PaymentEvent paymentEvent, CancellationToken ct = default)
     {
-        await db.PaymentEvents.AddAsync(paymentEvent, ct);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.PaymentEvents.AddAsync(paymentEvent, ct);
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsUniqueEventIdViolation(ex))
+        {
+            throw new DuplicatePaymentEventException(paymentEvent.EventId, ex);
+        }
     }
 
     public async Task UpdateAsync(PaymentEvent paymentEvent, CancellationToken ct = default)
     {
         db.PaymentEvents.Update(paymentEvent);
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<int> RecoverStuckProcessingAsync(TimeSpan threshold, CancellationToken ct = default)
+    {
+        var deadline = DateTime.UtcNow - threshold;
+        var stuck = await db.PaymentEvents
+            .Where(e => e.Status == PaymentEventStatus.Processing && e.CreatedAt <= deadline)
+            .ToListAsync(ct);
+
+        if (stuck.Count == 0)
+            return 0;
+
+        foreach (var evt in stuck)
+            evt.MarkAsFailed();
+
+        await db.SaveChangesAsync(ct);
+        return stuck.Count;
     }
 
     public async Task<PagedResult<PaymentEvent>> ListAsync(PaymentEventStatus? status, int page, int pageSize, CancellationToken ct = default)
@@ -54,5 +80,14 @@ public sealed class PaymentEventRepository(RecixDbContext db, ICurrentOrganizati
             .ToListAsync(ct);
 
         return new PagedResult<PaymentEvent> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
+    }
+
+    private static bool IsUniqueEventIdViolation(DbUpdateException ex)
+    {
+        if (ex.InnerException is not PostgresException pg)
+            return false;
+
+        return pg.SqlState == PostgresErrorCodes.UniqueViolation &&
+               (pg.ConstraintName?.Contains("ix_payment_events_event_id", StringComparison.OrdinalIgnoreCase) ?? false);
     }
 }

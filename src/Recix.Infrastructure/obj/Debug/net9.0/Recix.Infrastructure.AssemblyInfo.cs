@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Recix.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e0a97e373663a25565eab903e1d2f0028aa68c37")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+093b1c980ccdcc48844a6c1676894e67e781bbe9")]
 [assembly: System.Reflection.AssemblyProductAttribute("Recix.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Recix.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

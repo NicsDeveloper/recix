@@ -1,0 +1,38 @@
+name: Reliability Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  reliability-gate:
+    name: Reliability Gate (fintech)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run full test suite
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+      - name: Run critical reliability tests only
+        run: >
+          dotnet test tests/Recix.Tests/Recix.Tests.csproj
+          --no-build
+          --configuration Release
+          --verbosity normal
+          --filter "FullyQualifiedName~ReceivePixWebhookUseCaseTests|FullyQualifiedName~ProcessPaymentEventUseCaseTests"

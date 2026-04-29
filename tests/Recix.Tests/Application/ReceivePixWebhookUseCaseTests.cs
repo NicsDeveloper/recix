@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Recix.Application.DTOs;
+using Recix.Application.Services;
 using Recix.Application.UseCases;
 using Recix.Domain.Enums;
 using Recix.Tests.Application.Fakes;
@@ -19,7 +20,7 @@ public sealed class ReceivePixWebhookUseCaseTests
     };
 
     private static ReceivePixWebhookUseCase BuildUseCase(FakePaymentEventRepository repo) =>
-        new(repo, new FakeCurrentOrganization(), NullLogger<ReceivePixWebhookUseCase>.Instance);
+        new(repo, new FakeCurrentOrganization(), new PaymentReliabilityMetrics(), NullLogger<ReceivePixWebhookUseCase>.Instance);
 
     [Fact]
     public async Task Execute_NewEvent_ReturnsReceived()
@@ -79,5 +80,22 @@ public sealed class ReceivePixWebhookUseCaseTests
         await useCase.ExecuteAsync(BuildRequest("evt_002"));
 
         repo.All.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Execute_SameEventFiveTimesConcurrently_PersistsOnlyOne()
+    {
+        var repo = new FakePaymentEventRepository();
+        var useCase = BuildUseCase(repo);
+
+        var tasks = Enumerable.Range(0, 5)
+            .Select(_ => useCase.ExecuteAsync(BuildRequest("evt_parallel")))
+            .ToArray();
+
+        var responses = await Task.WhenAll(tasks);
+
+        repo.All.Should().HaveCount(1);
+        responses.Count(r => r.Status == "Received").Should().Be(1);
+        responses.Count(r => r.Status == "IgnoredDuplicate").Should().Be(4);
     }
 }

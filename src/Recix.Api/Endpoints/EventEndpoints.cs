@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Recix.Application.Services;
 using Recix.Application.Interfaces;
 
 namespace Recix.Api.Endpoints;
@@ -7,6 +8,10 @@ public static class EventEndpoints
 {
     public static void MapEventEndpoints(this WebApplication app)
     {
+        app.MapGet("/events/metrics", (PaymentReliabilityMetrics metrics) => Results.Ok(metrics.Snapshot()))
+            .WithTags("Events")
+            .WithSummary("Métricas básicas de confiabilidade dos eventos de pagamento");
+
         app.MapGet("/events/stream", async (
             IEventBroadcaster broadcaster,
             HttpContext ctx,

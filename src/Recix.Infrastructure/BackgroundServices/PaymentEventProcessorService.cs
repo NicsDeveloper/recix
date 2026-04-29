@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Recix.Application.Services;
 using Recix.Application.Interfaces;
 using Recix.Application.UseCases;
 using Recix.Domain.Enums;
@@ -10,19 +11,24 @@ namespace Recix.Infrastructure.BackgroundServices;
 public sealed class PaymentEventProcessorService : BackgroundService
 {
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan StuckProcessingThreshold = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan FailedRetryDelay = TimeSpan.FromSeconds(20);
     private const int BatchSize = 10;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IEventBroadcaster _broadcaster;
+    private readonly PaymentReliabilityMetrics _metrics;
     private readonly ILogger<PaymentEventProcessorService> _logger;
 
     public PaymentEventProcessorService(
         IServiceScopeFactory scopeFactory,
         IEventBroadcaster broadcaster,
+        PaymentReliabilityMetrics metrics,
         ILogger<PaymentEventProcessorService> logger)
     {
         _scopeFactory = scopeFactory;
         _broadcaster = broadcaster;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -54,6 +60,32 @@ public sealed class PaymentEventProcessorService : BackgroundService
         var eventRepo = scope.ServiceProvider.GetRequiredService<IPaymentEventRepository>();
         var useCase = scope.ServiceProvider.GetRequiredService<ProcessPaymentEventUseCase>();
 
+        var recovered = await eventRepo.RecoverStuckProcessingAsync(StuckProcessingThreshold, stoppingToken);
+        if (recovered > 0)
+        {
+            _metrics.IncrementStuckRecovered(recovered);
+            _logger.LogWarning("Recovered {Count} stuck payment event(s) in Processing state.", recovered);
+        }
+
+        var failedPage = await eventRepo.ListAsync(PaymentEventStatus.Failed, 1, BatchSize, stoppingToken);
+        var retryable = failedPage.Items
+            .Where(e => e.ProcessedAt.HasValue && e.ProcessedAt.Value <= DateTime.UtcNow - FailedRetryDelay)
+            .ToList();
+
+        foreach (var evt in retryable)
+        {
+            try
+            {
+                evt.RequeueForRetry();
+                await eventRepo.UpdateAsync(evt, stoppingToken);
+                _logger.LogInformation("Requeued failed payment event {PaymentEventId} for retry.", evt.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to requeue payment event {PaymentEventId}.", evt.Id);
+            }
+        }
+
         var pending = await eventRepo.GetByStatusAsync(PaymentEventStatus.Received, BatchSize, stoppingToken);
 
         if (pending.Count == 0)
@@ -72,7 +104,6 @@ public sealed class PaymentEventProcessorService : BackgroundService
 
                 // Notifica clientes SSE que houve mudança
                 _broadcaster.Publish(RecixEvent.PaymentEventUpdated(evt.Id));
-                _broadcaster.Publish(RecixEvent.ChargeUpdated(evt.Id)); // frontend invalida charges também
             }
             catch (Exception ex)
             {

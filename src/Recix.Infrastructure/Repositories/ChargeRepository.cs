@@ -28,7 +28,9 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
     {
         var start = date.Date.ToUniversalTime();
         var end   = start.AddDays(1);
-        return OrgQuery().CountAsync(c => c.CreatedAt >= start && c.CreatedAt < end, ct);
+        // reference_id é único globalmente na tabela; a sequência diária precisa ser global
+        // para evitar colisões entre organizações diferentes.
+        return db.Charges.CountAsync(c => c.CreatedAt >= start && c.CreatedAt < end, ct);
     }
 
     public async Task AddAsync(Charge charge, CancellationToken ct = default)

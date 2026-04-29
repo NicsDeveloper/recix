@@ -76,4 +76,13 @@ public sealed class PaymentEvent
     {
         Status = PaymentEventStatus.IgnoredDuplicate;
     }
+
+    public void RequeueForRetry()
+    {
+        if (Status != PaymentEventStatus.Failed)
+            throw new DomainException($"Cannot requeue a {Status} event for retry.");
+
+        Status = PaymentEventStatus.Received;
+        ProcessedAt = null;
+    }
 }

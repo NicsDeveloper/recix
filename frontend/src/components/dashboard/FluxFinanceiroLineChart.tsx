@@ -53,15 +53,15 @@ export function FluxFinanceiroLineChart({ fluxSeries, summary }: FluxFinanceiroL
       <div className="h-[260px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={fluxSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-gray-700)" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: 'var(--color-gray-500)', fontSize: 11 }}
+              tick={{ fill: '#6B7280', fontSize: 11 }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fill: 'var(--color-gray-500)', fontSize: 11 }}
+              tick={{ fill: '#6B7280', fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={60}

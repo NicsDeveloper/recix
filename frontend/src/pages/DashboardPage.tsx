@@ -29,7 +29,15 @@ import type { FluxPoint } from '../types'
 function makeSparkValues(base: number, trend: 'success' | 'warning' | 'danger' | 'neutral') {
   const points = 14
   const safeBase = Math.max(0, Number.isFinite(base) ? base : 0)
-  if (safeBase === 0) return Array.from({ length: points }, () => 0)
+  if (safeBase === 0) {
+    const templates: Record<typeof trend, number[]> = {
+      success: [6, 8, 7, 9, 10, 9, 11, 12, 11, 13, 14, 15, 14, 16],
+      warning: [12, 11, 12, 10, 11, 10, 9, 8, 9, 8, 7, 8, 7, 6],
+      danger: [10, 9, 10, 8, 7, 6, 7, 5, 4, 5, 4, 3, 2, 2],
+      neutral: [8, 8, 9, 8, 9, 9, 10, 9, 10, 10, 11, 10, 11, 11],
+    }
+    return templates[trend]
+  }
 
   const start = trend === 'success' ? 0.72 : trend === 'warning' ? 0.64 : trend === 'danger' ? 0.56 : 0.66
   const end = trend === 'success' ? 1.02 : trend === 'warning' ? 0.9 : trend === 'danger' ? 0.78 : 0.95
@@ -49,6 +57,24 @@ function formatPct(value: number) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
+function mapPaymentStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    Received: 'Recebido',
+    Processing: 'Processando',
+    Processed: 'Processado',
+    Failed: 'Falhou',
+    IgnoredDuplicate: 'Duplicado ignorado',
+  }
+  return map[status] ?? status
+}
+
+function toInputDate(date: Date) {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
 function LightStatusBadge({ status }: { status: ReconciliationStatus | string }) {
   const s = status as ReconciliationStatus
   const map: Record<string, { bg: string; fg: string; border: string; label: string }> = {
@@ -56,31 +82,31 @@ function LightStatusBadge({ status }: { status: ReconciliationStatus | string })
       bg: 'bg-green-500/10',
       fg: 'text-green-400',
       border: 'border-green-500/20',
-      label: 'Matched',
+      label: 'Conciliada',
     },
     AmountMismatch: {
       bg: 'bg-red-500/10',
       fg: 'text-red-400',
       border: 'border-red-500/20',
-      label: 'AmountMismatch',
+      label: 'Divergência de valor',
     },
     DuplicatePayment: {
       bg: 'bg-orange-500/10',
       fg: 'text-orange-400',
       border: 'border-orange-500/20',
-      label: 'Duplicate',
+      label: 'Pagamento duplicado',
     },
     PaymentWithoutCharge: {
       bg: 'bg-red-500/10',
       fg: 'text-red-400',
       border: 'border-red-500/20',
-      label: 'PaymentWithoutCharge',
+      label: 'Sem cobrança',
     },
     ExpiredChargePaid: {
       bg: 'bg-yellow-500/10',
       fg: 'text-yellow-400',
       border: 'border-yellow-500/20',
-      label: 'Expired',
+      label: 'Cobrança expirada paga',
     },
   }
 
@@ -271,8 +297,11 @@ const MOCK_OVERVIEW: DashboardOverview = {
 }
 
 export function DashboardPage() {
-  const [fromDate, setFromDate] = useState('2024-05-13')
-  const [toDate, setToDate] = useState('2024-05-13')
+  const today = new Date()
+  const defaultToDate = toInputDate(today)
+  const defaultFromDate = toInputDate(new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000))
+  const [fromDate, setFromDate] = useState(defaultFromDate)
+  const [toDate, setToDate] = useState(defaultToDate)
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['dashboard-overview', fromDate, toDate],
@@ -282,13 +311,7 @@ export function DashboardPage() {
 
   const overview = useMemo<DashboardOverview>(() => {
     if (!data) return MOCK_OVERVIEW
-    const isEmpty =
-      data.summary.totalCharges === 0 &&
-      data.fluxSeries.length === 0 &&
-      data.recentReconciliations.length === 0 &&
-      data.recentPaymentEvents.length === 0
-
-    return isEmpty ? MOCK_OVERVIEW : data
+    return data
   }, [data])
 
   if (isLoading) return <LoadingState />
@@ -319,21 +342,21 @@ export function DashboardPage() {
     overview.summary.reconciliationIssues.invalidReference +
     overview.summary.reconciliationIssues.processingError
 
-  const matched = Math.max(0, totalCharges - issuesSum)
+  const matched = Math.max(0, paidCharges - issuesSum)
 
   const donutItems = [
-    { key: 'Matched', label: 'Matched', value: matched, color: '#22C55E' },
-    { key: 'AmountMismatch', label: 'AmountMismatch', value: overview.summary.reconciliationIssues.amountMismatch, color: '#EF4444' },
-    { key: 'DuplicatePayment', label: 'DuplicatePayment', value: overview.summary.reconciliationIssues.duplicatePayment, color: '#F97316' },
-    { key: 'PaymentWithoutCharge', label: 'PaymentWithoutCharge', value: overview.summary.reconciliationIssues.paymentWithoutCharge, color: '#F87171' },
-    { key: 'ExpiredChargePaid', label: 'ExpiredChargePaid', value: overview.summary.reconciliationIssues.expiredChargePaid, color: '#F59E0B' },
-    { key: 'InvalidReference', label: 'InvalidReference', value: overview.summary.reconciliationIssues.invalidReference, color: '#8B5CF6' },
-    { key: 'ProcessingError', label: 'ProcessingError', value: overview.summary.reconciliationIssues.processingError, color: '#6B7280' },
+    { key: 'Matched', label: 'Conciliadas', value: matched, color: '#22C55E' },
+    { key: 'AmountMismatch', label: 'Divergência de valor', value: overview.summary.reconciliationIssues.amountMismatch, color: '#EF4444' },
+    { key: 'DuplicatePayment', label: 'Pagamento duplicado', value: overview.summary.reconciliationIssues.duplicatePayment, color: '#F97316' },
+    { key: 'PaymentWithoutCharge', label: 'Sem cobrança', value: overview.summary.reconciliationIssues.paymentWithoutCharge, color: '#F87171' },
+    { key: 'ExpiredChargePaid', label: 'Cobrança expirada paga', value: overview.summary.reconciliationIssues.expiredChargePaid, color: '#F59E0B' },
+    { key: 'InvalidReference', label: 'Referência inválida', value: overview.summary.reconciliationIssues.invalidReference, color: '#8B5CF6' },
+    { key: 'ProcessingError', label: 'Erro de processamento', value: overview.summary.reconciliationIssues.processingError, color: '#6B7280' },
   ] as const
 
   const problems: ProblemsDetectedItem[] = [
     {
-      label: 'Amount Mismatch',
+      label: 'Divergência de valor',
       description: 'Valor recebido diferente do cobrado.',
       count: overview.summary.reconciliationIssues.amountMismatch,
       percent: percent(overview.summary.reconciliationIssues.amountMismatch, totalCharges),
@@ -341,7 +364,7 @@ export function DashboardPage() {
       icon: <AlertTriangle size={16} />,
     },
     {
-      label: 'Duplicate Payment',
+      label: 'Pagamento duplicado',
       description: 'Pagamentos duplicados detectados.',
       count: overview.summary.reconciliationIssues.duplicatePayment,
       percent: percent(overview.summary.reconciliationIssues.duplicatePayment, totalCharges),
@@ -349,7 +372,7 @@ export function DashboardPage() {
       icon: <Copy size={16} />,
     },
     {
-      label: 'Payment Without Charge',
+      label: 'Pagamento sem cobrança',
       description: 'Evento sem cobrança correspondente.',
       count: overview.summary.reconciliationIssues.paymentWithoutCharge,
       percent: percent(overview.summary.reconciliationIssues.paymentWithoutCharge, totalCharges),
@@ -357,7 +380,7 @@ export function DashboardPage() {
       icon: <Ban size={16} />,
     },
     {
-      label: 'Expired Charge Paid',
+      label: 'Cobrança expirada paga',
       description: 'Cobrança expirada recebeu pagamento.',
       count: overview.summary.reconciliationIssues.expiredChargePaid,
       percent: percent(overview.summary.reconciliationIssues.expiredChargePaid, totalCharges),
@@ -369,7 +392,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <DashboardHeader
-        title="Dashboard"
+        title="Painel"
         subtitle="Visão geral da saúde financeira em tempo real"
         fromDate={fromDate}
         toDate={toDate}
@@ -431,7 +454,8 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ReconciliationDonut
-          total={overview.summary.totalCharges}
+          total={overview.summary.paidCharges}
+          centerLabel="Pagas"
           items={donutItems.map((d) => ({
             key: d.key,
             label: d.label,
@@ -505,7 +529,7 @@ export function DashboardPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="bg-gray-800">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">EventId</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">ID do evento</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Referência</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400 uppercase">Valor Pago</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Provedor</th>
@@ -522,7 +546,7 @@ export function DashboardPage() {
                       <td className="px-4 py-3.5 text-sm text-gray-300">{e.provider}</td>
                       <td className="px-4 py-3.5">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border border-green-500/20 bg-green-500/10 text-green-400">
-                          {e.status}
+                          {mapPaymentStatusLabel(e.status)}
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-sm text-gray-300">{formatDateTime(e.paidAt)}</td>
