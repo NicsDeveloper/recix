@@ -26,6 +26,14 @@ public sealed class ErrorHandlingMiddleware
         {
             await WriteJsonAsync(context, StatusCodes.Status404NotFound, "NotFound", ex.Message);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            await WriteJsonAsync(context, StatusCodes.Status401Unauthorized, "Unauthorized", ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await WriteJsonAsync(context, StatusCodes.Status400BadRequest, "BusinessError", ex.Message);
+        }
         catch (ArgumentException ex)
         {
             await WriteJsonAsync(context, StatusCodes.Status400BadRequest, "ValidationError", ex.Message);

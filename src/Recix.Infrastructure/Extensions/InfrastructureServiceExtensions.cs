@@ -1,6 +1,9 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using Recix.Application.Interfaces;
 using Recix.Application.Services;
 using Recix.Application.UseCases;
@@ -21,6 +24,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IChargeRepository, ChargeRepository>();
         services.AddScoped<IPaymentEventRepository, PaymentEventRepository>();
         services.AddScoped<IReconciliationRepository, ReconciliationRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IAiInsightService, FakeAiInsightService>();
 
         services.AddScoped<ReconciliationEngine>();
@@ -28,8 +32,43 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ReceivePixWebhookUseCase>();
         services.AddScoped<ProcessPaymentEventUseCase>();
         services.AddScoped<DashboardQueryService>();
+        services.AddScoped<RegisterUseCase>();
+        services.AddScoped<LoginUseCase>();
+        services.AddScoped<GoogleAuthUseCase>();
 
-        // PIX Provider: EfiBank (real) quando configurado, Fake caso contrário
+        // ─── Auth ─────────────────────────────────────────────────────────────────
+        services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
+
+        var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+        services.AddSingleton(jwtOptions);
+        services.AddSingleton<IJwtService, JwtService>();
+
+        var googleOptions = configuration.GetSection(GoogleOptions.SectionName).Get<GoogleOptions>() ?? new GoogleOptions();
+        services.AddSingleton(googleOptions);
+        services.AddSingleton<IGoogleTokenVerifier, GoogleTokenVerifier>();
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(opts =>
+            {
+                opts.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer           = true,
+                    ValidateAudience         = true,
+                    ValidateLifetime         = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer              = jwtOptions.Issuer,
+                    ValidAudience            = jwtOptions.Audience,
+                    IssuerSigningKey         = new SymmetricSecurityKey(
+                        Encoding.UTF8.GetBytes(jwtOptions.Secret)),
+                };
+            });
+
+        services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build());
+
+        // ─── PIX Provider: EfiBank (real) quando configurado, Fake caso contrário
         services.Configure<EfiBankOptions>(configuration.GetSection(EfiBankOptions.SectionName));
         var efiBankOptions = configuration.GetSection(EfiBankOptions.SectionName).Get<EfiBankOptions>() ?? new EfiBankOptions();
         if (efiBankOptions.IsConfigured)

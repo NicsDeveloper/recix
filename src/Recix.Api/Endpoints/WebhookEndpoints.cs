@@ -18,7 +18,8 @@ public static class WebhookEndpoints
             .WithSummary("Recebe um evento de pagamento PIX (simulador / fake)")
             .Produces<ReceivePixWebhookResponse>(StatusCodes.Status202Accepted)
             .Produces<ReceivePixWebhookResponse>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .AllowAnonymous();
 
         // Endpoint real — chamado pela EfiBank quando um pagamento é confirmado
         group.MapPost("/efibank", ReceiveEfiBankWebhook)
@@ -26,7 +27,8 @@ public static class WebhookEndpoints
             .WithSummary("Endpoint de webhook real da EfiBank (PIX confirmado)")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status401Unauthorized)
+            .AllowAnonymous();
     }
 
     // ─── Fake / Simulator ────────────────────────────────────────────────────

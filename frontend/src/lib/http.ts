@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import { API_BASE_URL } from '../config/env'
+import { getStoredToken } from '../contexts/AuthContext'
 
 export const http = axios.create({
   baseURL: API_BASE_URL,
@@ -7,6 +8,14 @@ export const http = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+// ─── Request interceptor — injeta JWT ────────────────────────────────────────
+
+http.interceptors.request.use((config) => {
+  const token = getStoredToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
 })
 
 // ─── Response interceptor ────────────────────────────────────────────────────

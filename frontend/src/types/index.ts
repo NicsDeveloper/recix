@@ -97,6 +97,20 @@ export interface PagedResult<T> {
   pageSize: number
 }
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export interface UserDto {
+  id:    string
+  email: string
+  name:  string
+  role:  string
+}
+
+export interface AuthResponse {
+  token: string
+  user:  UserDto
+}
+
 // ─── Request / Response ───────────────────────────────────────────────────────
 
 export interface CreateChargeRequest {
