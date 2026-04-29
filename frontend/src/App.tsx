@@ -13,6 +13,7 @@ import { ChargeDetailPage } from './pages/ChargeDetailPage'
 import { PaymentEventsPage } from './pages/PaymentEventsPage'
 import { ReconciliationsPage } from './pages/ReconciliationsPage'
 import { WebhookSimulatorPage } from './pages/WebhookSimulatorPage'
+import { AlertsPage } from './pages/AlertsPage'
 import { useRealtimeEvents } from './hooks/useRealtimeEvents'
 import { LoadingState } from './components/ui/LoadingState'
 
@@ -68,6 +69,7 @@ function AppCore() {
           <Route path="/charges/:id" element={<ChargeDetailPage />} />
           <Route path="/payment-events" element={<PaymentEventsPage />} />
           <Route path="/reconciliations" element={<ReconciliationsPage />} />
+          <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/webhooks/simulator" element={<WebhookSimulatorPage />} />
           <Route path="/join-requests" element={<JoinRequestsPage />} />
         </Route>

@@ -14,7 +14,6 @@ import {
   WifiOff,
   Settings,
   LogOut,
-  UserCheck,
 } from 'lucide-react'
 import { dashboardService } from '../../services/dashboardService'
 import { organizationsService } from '../../services/organizationsService'
@@ -22,7 +21,14 @@ import { useAuth } from '../../contexts/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 
 type NavItem =
-  | { kind: 'link'; label: string; icon: ComponentType<{ size?: number; className?: string }>; to: string; badge?: string; end?: boolean }
+  | {
+      kind: 'link'
+      label: string
+      icon: ComponentType<{ size?: number; className?: string }>
+      to: string
+      badge?: string
+      end?: boolean
+    }
   | { kind: 'placeholder'; label: string; icon: ComponentType<{ size?: number; className?: string }> }
 
 const navItems: NavItem[] = [
@@ -44,7 +50,7 @@ const navItems: NavItem[] = [
     badge: 'Novo',
   },
   { kind: 'placeholder', label: 'Relatórios', icon: FileText },
-  { kind: 'placeholder', label: 'Alertas', icon: Bell },
+  { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
   { kind: 'placeholder', label: 'Configurações', icon: Settings },
 ]
 
@@ -83,29 +89,6 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-        {/* Item de solicitações de acesso — visível apenas para admins */}
-        {isAdmin && (
-          <NavLink
-            to="/join-requests"
-            className={({ isActive }) =>
-              [
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
-                isActive
-                  ? 'bg-green-500/10 text-green-500 border-l-2 border-green-500/30 pl-[10px]'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 border-l-2 border-transparent pl-[10px]',
-              ].join(' ')
-            }
-          >
-            <UserCheck size={15} className="flex-shrink-0" />
-            <span className="truncate">Solicitações</span>
-            {pendingCount > 0 && (
-              <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold">
-                {pendingCount}
-              </span>
-            )}
-          </NavLink>
-        )}
-
         {navItems.map((item) => {
           if (item.kind === 'placeholder') {
             const Icon = item.icon
@@ -140,11 +123,15 @@ export function Sidebar() {
             >
               <Icon size={15} className="flex-shrink-0" />
               <span className="truncate">{item.label}</span>
-              {item.badge && (
+              {item.label === 'Alertas' && isAdmin && pendingCount > 0 ? (
+                <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold">
+                  {pendingCount}
+                </span>
+              ) : item.badge ? (
                 <span className="ml-auto text-[11px] px-2 py-0.5 rounded-md border border-green-500/20 bg-green-500/10 text-green-400">
                   {item.badge}
                 </span>
-              )}
+              ) : null}
             </NavLink>
           )
         })}
