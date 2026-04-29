@@ -17,6 +17,7 @@ interface DataTableProps<T> {
   emptyIcon?: ReactNode
   onRowClick?: (row: T) => void
   keyExtractor?: (row: T) => string
+  rowClassName?: (row: T) => string | undefined
 }
 
 export function DataTable<T>({
@@ -27,6 +28,7 @@ export function DataTable<T>({
   emptyIcon,
   onRowClick,
   keyExtractor,
+  rowClassName,
 }: DataTableProps<T>) {
   if (isLoading) return <LoadingState />
 
@@ -58,6 +60,7 @@ export function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={[
                   'bg-gray-900 transition-colors',
+                  rowClassName?.(row) ?? '',
                   onRowClick ? 'cursor-pointer hover:bg-gray-800/60' : '',
                 ].join(' ')}
               >

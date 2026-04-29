@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { API_BASE_URL } from '../config/env'
 
 interface RecixEvent {
   type: string
@@ -17,7 +18,8 @@ export function useRealtimeEvents() {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    const es = new EventSource('/events/stream')
+    const streamUrl = `${API_BASE_URL}/events/stream`
+    const es = new EventSource(streamUrl)
 
     es.onopen = () => {
       console.debug('[SSE] Conectado ao stream de eventos.')

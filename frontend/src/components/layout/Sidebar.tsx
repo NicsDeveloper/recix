@@ -51,7 +51,7 @@ const navItems: NavItem[] = [
     badge: 'Novo',
     adminOnly: true,
   },
-  { kind: 'placeholder', label: 'Relatórios', icon: FileText },
+  { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
   { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
   { kind: 'placeholder', label: 'Configurações', icon: Settings },
 ]

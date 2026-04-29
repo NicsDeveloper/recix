@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Eye, CreditCard } from 'lucide-react'
@@ -26,6 +26,13 @@ export function ChargesPage() {
   const [showModal, setShowModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState<ChargeStatus | ''>('')
   const [search, setSearch] = useState('')
+  const [highlightedChargeId, setHighlightedChargeId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!highlightedChargeId) return
+    const t = setTimeout(() => setHighlightedChargeId(null), 5000)
+    return () => clearTimeout(t)
+  }, [highlightedChargeId])
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['charges', statusFilter],
@@ -133,9 +140,23 @@ export function ChargesPage() {
         emptyIcon={<CreditCard size={24} />}
         onRowClick={(c) => navigate(`/charges/${c.id}`)}
         keyExtractor={(c) => c.id}
+        rowClassName={(c) =>
+          c.id === highlightedChargeId
+            ? 'ring-1 ring-emerald-400/60 bg-emerald-500/5'
+            : undefined
+        }
       />
 
-      {showModal && <CreateChargeModal onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <CreateChargeModal
+          onClose={() => setShowModal(false)}
+          onCreated={(charge) => {
+            setHighlightedChargeId(charge.id)
+            setStatusFilter('')
+            setSearch('')
+          }}
+        />
+      )}
     </div>
   )
 }

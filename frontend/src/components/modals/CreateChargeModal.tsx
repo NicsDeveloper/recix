@@ -2,14 +2,17 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, Copy, Check } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
+import { Link } from 'react-router-dom'
 import { chargesService } from '../../services/chargesService'
 import type { Charge } from '../../types'
+import { formatCurrency } from '../../lib/formatters'
 
 interface CreateChargeModalProps {
   onClose: () => void
+  onCreated?: (charge: Charge) => void
 }
 
-export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
+export function CreateChargeModal({ onClose, onCreated }: CreateChargeModalProps) {
   const queryClient = useQueryClient()
 
   const [amount, setAmount] = useState('')
@@ -28,6 +31,7 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
       queryClient.invalidateQueries({ queryKey: ['charges'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
       setCreatedCharge(charge)
+      onCreated?.(charge)
     },
     onError: (err: Error & { validationErrors?: Record<string, string[]> }) => {
       if (err.validationErrors) setErrors(err.validationErrors)
@@ -37,6 +41,14 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
   const amountNum = parseFloat(amount)
   const expiresNum = parseInt(expiresInMinutes, 10)
   const isValid = !isNaN(amountNum) && amountNum > 0 && !isNaN(expiresNum) && expiresNum > 0
+
+  function resetForm() {
+    setAmount('')
+    setExpiresInMinutes('30')
+    setCreatedCharge(null)
+    setCopied(false)
+    setErrors({})
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -63,7 +75,7 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <h2 className="text-base font-semibold text-gray-50">
-            {createdCharge ? 'Cobrança Criada' : 'Nova Cobrança'}
+            {createdCharge ? 'Cobrança registrada para validação' : 'Nova Cobrança'}
           </h2>
           <button
             onClick={onClose}
@@ -79,7 +91,18 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
             <div className="space-y-4">
               {/* Success header */}
               <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-sm text-green-400">
-                Cobrança <span className="font-mono font-semibold">{createdCharge.referenceId}</span> criada com sucesso!
+                Cobrança registrada como pagamento esperado com sucesso
+              </div>
+
+              <div className="rounded-lg bg-gray-800/60 border border-gray-700 p-3">
+                <p className="text-xs text-gray-400">Valor esperado</p>
+                <p className="text-sm font-semibold text-gray-100 mt-0.5">{formatCurrency(createdCharge.amount)}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Expira em {new Date(createdCharge.expiresAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Esta cobrança será utilizada para validar automaticamente o pagamento recebido.
+                </p>
               </div>
 
               {/* QR Code */}
@@ -96,7 +119,7 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
                     />
                   </div>
                   <p className="text-xs text-gray-500 text-center">
-                    Escaneie o QR Code para pagar via PIX
+                    Use este QR Code para simular ou realizar o pagamento
                   </p>
 
                   {/* PIX Copia e Cola */}
@@ -117,6 +140,10 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
                         {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
                       </button>
                     </div>
+                    {copied && <p className="text-xs text-green-400 mt-1.5">Código PIX copiado com sucesso.</p>}
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Este código representa o pagamento esperado que será validado pelo RECIX.
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -129,6 +156,36 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
                   <p className="text-xs text-gray-500 mt-2 font-mono">{createdCharge.referenceId}</p>
                 </div>
               )}
+
+              <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3">
+                <p className="text-xs font-semibold text-indigo-300 mb-1.5">Próximos passos</p>
+                <ol className="text-xs text-gray-300 space-y-1 list-decimal pl-4">
+                  <li>Envie o QR Code ou código PIX ao pagador.</li>
+                  <li>O RECIX capturará automaticamente o evento de pagamento.</li>
+                  <li>O sistema validará se o valor recebido corresponde ao esperado.</li>
+                </ol>
+              </div>
+
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
+                <p className="text-xs font-semibold text-amber-300">MVP / Simulação</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Link
+                  to="/payment-events"
+                  onClick={onClose}
+                  className="text-center px-3 py-2 text-xs font-medium text-gray-200 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Ir para Eventos
+                </Link>
+                <Link
+                  to="/reconciliations"
+                  onClick={onClose}
+                  className="text-center px-3 py-2 text-xs font-medium text-gray-200 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Ir para Conciliações
+                </Link>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -158,6 +215,13 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
                   <p className="mt-1 text-xs text-red-400">{errors['amount'].join(', ')}</p>
                 )}
               </div>
+
+              {isValid && (
+                <div className="rounded-lg bg-gray-800/50 border border-gray-700 px-3 py-2 text-xs text-gray-300">
+                  Você está criando uma cobrança de <span className="font-semibold text-gray-100">{formatCurrency(amountNum)}</span> com expiração em{' '}
+                  <span className="font-semibold text-gray-100">{expiresNum} min</span>.
+                </div>
+              )}
 
               {/* Expires In Minutes */}
               <div>
@@ -202,10 +266,16 @@ export function CreateChargeModal({ onClose }: CreateChargeModalProps) {
 
         {/* Footer after success */}
         {createdCharge && (
-          <div className="px-6 pb-5">
+          <div className="px-6 pb-5 flex gap-3">
+            <button
+              onClick={resetForm}
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+            >
+              Nova cobrança
+            </button>
             <button
               onClick={onClose}
-              className="w-full px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
             >
               Fechar
             </button>
