@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Recix.Api/Recix.Api.csproj" />
+    <Project Path="src/Recix.Application/Recix.Application.csproj" />
+    <Project Path="src/Recix.Domain/Recix.Domain.csproj" />
+    <Project Path="src/Recix.Infrastructure/Recix.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Recix.Tests/Recix.Tests.csproj" />
+  </Folder>
+</Solution>
