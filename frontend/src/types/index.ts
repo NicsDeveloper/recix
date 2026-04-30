@@ -65,6 +65,7 @@ export interface DashboardSummary {
   totalReceivedAmount: number
   totalDivergentAmount: number
   reconciliationIssues: {
+    matched: number
     amountMismatch: number
     duplicatePayment: number
     paymentWithoutCharge: number
@@ -233,4 +234,76 @@ export interface ReconciliationListParams {
   paymentEventId?: string
   page?: number
   pageSize?: number
+}
+
+// ─── Closing Report ──────────────────────────────────────────────────────────
+
+export interface UnreconciledCharge {
+  id: string
+  referenceId: string
+  amount: number
+  status: ChargeStatus
+  expiresAt: string
+  createdAt: string
+}
+
+export interface ClosingReport {
+  from: string
+  to: string
+  totalCharges: number
+  paidCharges: number
+  pendingCharges: number
+  divergentCharges: number
+  expiredCharges: number
+  expectedAmount: number
+  receivedAmount: number
+  divergentAmount: number
+  pendingAmount: number
+  recoveryRate: number
+  reconciliationsTotal: number
+  reconciliationsMatched: number
+  reconciliationsAmountMismatch: number
+  reconciliationsDuplicate: number
+  reconciliationsNoCharge: number
+  reconciliationsExpiredPaid: number
+  reconciliationsInvalidRef: number
+  reconciliationsError: number
+  unreconciled: UnreconciledCharge[]
+  generatedAt: string
+}
+
+// ─── Import ───────────────────────────────────────────────────────────────────
+
+export interface ImportLineResult {
+  line: number
+  eventId: string
+  /** 'Imported' | 'Duplicate' | 'Error' */
+  status: string
+  error?: string | null
+}
+
+export interface ImportStatementResult {
+  imported: number
+  duplicates: number
+  errors: number
+  lines: ImportLineResult[]
+}
+
+// ─── Alert Config ─────────────────────────────────────────────────────────────
+
+export interface AlertConfig {
+  webhookUrl: string | null
+  notifyAmountMismatch: boolean
+  notifyDuplicatePayment: boolean
+  notifyPaymentWithoutCharge: boolean
+  notifyExpiredChargePaid: boolean
+  updatedAt: string
+}
+
+export interface UpdateAlertConfigRequest {
+  webhookUrl?: string | null
+  notifyAmountMismatch: boolean
+  notifyDuplicatePayment: boolean
+  notifyPaymentWithoutCharge: boolean
+  notifyExpiredChargePaid: boolean
 }

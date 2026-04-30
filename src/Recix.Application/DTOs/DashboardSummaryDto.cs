@@ -14,6 +14,7 @@ public sealed class DashboardSummaryDto
 
 public sealed class ReconciliationIssuesDto
 {
+    public int Matched { get; init; }
     public int AmountMismatch { get; init; }
     public int DuplicatePayment { get; init; }
     public int PaymentWithoutCharge { get; init; }

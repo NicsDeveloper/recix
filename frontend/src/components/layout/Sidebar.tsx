@@ -14,6 +14,7 @@ import {
   WifiOff,
   Settings,
   LogOut,
+  Upload,
 } from 'lucide-react'
 import { dashboardService } from '../../services/dashboardService'
 import { organizationsService } from '../../services/organizationsService'
@@ -53,7 +54,8 @@ const navItems: NavItem[] = [
   },
   { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
   { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
-  { kind: 'placeholder', label: 'Configurações', icon: Settings },
+  { kind: 'link', label: 'Importar Extrato', icon: Upload, to: '/import' },
+  { kind: 'link', label: 'Configurações', icon: Settings, to: '/settings' },
 ]
 
 export function Sidebar() {
@@ -141,10 +143,12 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* API Status */}
-      <div className="p-4 border-t border-gray-800 flex-shrink-0">
-        <div className="space-y-4">
+      {/* Footer */}
+      <div className="border-t border-gray-800 flex-shrink-0">
+        <div className="px-4 pt-3 pb-2">
           <ApiStatus />
+        </div>
+        <div className="px-4 pb-3 border-t border-gray-800/60 pt-2">
           <ThemeToggle size="sm" />
         </div>
       </div>
@@ -156,66 +160,68 @@ function ApiStatus() {
   const { user, logout, currentOrg, organizations } = useAuth()
   const { isSuccess, isError, isFetching } = useQuery({
     queryKey: ['api-health'],
-    queryFn: () => dashboardService.getSummary(),
+    queryFn:  () => dashboardService.getSummary(),
     staleTime: 60_000,
     retry: false,
     refetchInterval: 30_000,
   })
 
   const online = isSuccess && !isError
-  const displayUser = user ? `${user.name} - ${user.role}` : 'Dev Recix - Administrador'
+  const initials = user?.name
+    ? user.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+    : 'U'
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Status do sistema */}
       <div className="flex items-center gap-2">
         {online ? (
-          <Wifi size={12} className="text-green-500" />
+          <Wifi size={11} className="text-green-500 flex-shrink-0" />
         ) : (
-          <WifiOff size={12} className="text-red-500" />
+          <WifiOff size={11} className="text-red-500 flex-shrink-0" />
         )}
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-gray-200 leading-none">Sistema Operacional</p>
-          <p className="text-xs text-gray-500 mt-1">Todos os serviços online</p>
-        </div>
-        <span className="ml-auto flex items-center gap-1.5">
-          {isFetching ? (
-            <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-          ) : online ? (
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-          ) : (
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-          )}
+        <span className="text-xs text-gray-500 flex-1 min-w-0 truncate">
+          {online ? 'Sistema operacional' : 'Sistema offline'}
         </span>
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+          isFetching ? 'bg-yellow-500 animate-pulse' : online ? 'bg-green-500' : 'bg-red-500'
+        }`} />
       </div>
 
-      <div className="space-y-1">
-        <p className="text-xs text-gray-500">
-          Versão: <span className="text-gray-400">MVP 1.0.0</span>
-        </p>
-        <p className="text-xs text-gray-500 truncate" title={displayUser}>
-          Usuário: <span className="text-gray-400">{displayUser}</span>
-        </p>
-        {currentOrg && (
-          <p className="text-xs text-gray-500 truncate" title={currentOrg.name}>
-            Org: <span className="text-gray-400">{currentOrg.name}</span>
-            <span className="ml-1 text-[10px] text-indigo-400">{currentOrg.role}</span>
-          </p>
-        )}
-        {organizations.length > 1 && (
-          <p className="text-xs text-indigo-500 mt-0.5">
-            {organizations.length} organizações disponíveis
-          </p>
-        )}
-      </div>
-
+      {/* Usuário + org */}
       {user && (
-        <button
-          onClick={logout}
-          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-gray-500 hover:text-red-400 hover:bg-red-500/5 rounded-lg transition-colors"
-        >
-          <LogOut size={12} />
-          Sair da conta
-        </button>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0">
+            <span className="text-[10px] font-bold text-indigo-400">{initials}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-200 truncate leading-none" title={user.name}>
+              {user.name}
+            </p>
+            <div className="flex items-center gap-1 mt-0.5">
+              {currentOrg && (
+                <span className="text-[10px] text-gray-500 truncate" title={currentOrg.name}>
+                  {currentOrg.name}
+                </span>
+              )}
+              {currentOrg && (
+                <span className="text-[10px] text-indigo-400 flex-shrink-0">· {currentOrg.role}</span>
+              )}
+            </div>
+            {organizations.length > 1 && (
+              <p className="text-[10px] text-indigo-500 mt-0.5">
+                +{organizations.length - 1} org{organizations.length > 2 ? 's' : ''}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={logout}
+            title="Sair da conta"
+            className="flex-shrink-0 p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+          >
+            <LogOut size={12} />
+          </button>
+        </div>
       )}
     </div>
   )

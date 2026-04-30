@@ -1,19 +1,34 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
+using Recix.Api.BackgroundServices;
 using Recix.Api.Endpoints;
+using Recix.Api.Hubs;
 using Recix.Api.Middleware;
 using Recix.Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+// SignalR WebSocket exige AllowCredentials + WithOrigins (não AllowAnyOrigin)
+var frontendOrigins = builder.Configuration
+    .GetSection("AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:3000"];
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        policy.WithOrigins(frontendOrigins)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials());
 });
 
 // ─── Infrastructure (inclui Auth + JWT + PIX provider) ───────────────────────
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// ─── SignalR ──────────────────────────────────────────────────────────────────
+builder.Services.AddSignalR(opts => opts.EnableDetailedErrors = builder.Environment.IsDevelopment());
+builder.Services.AddHostedService<SignalRBridgeService>();
 
 // ─── Swagger ──────────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -74,7 +89,10 @@ app.MapWebhookEndpoints();  // /webhooks/* — AllowAnonymous internamente (PSP 
 app.MapPaymentEventEndpoints();
 app.MapReconciliationEndpoints();
 app.MapDashboardEndpoints();
+app.MapImportEndpoints();
+app.MapAlertConfigEndpoints();
 app.MapAiEndpoints();
 app.MapEventEndpoints();
+app.MapHub<DashboardHub>("/hubs/dashboard").AllowAnonymous(); // auth via JWT query string
 
 app.Run();

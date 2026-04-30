@@ -19,6 +19,11 @@ public static class DashboardEndpoints
             .WithName("GetDashboardOverview")
             .WithSummary("Retorna dados completos do Dashboard da UI")
             .Produces<DashboardOverviewDto>();
+
+        group.MapGet("/closing-report", GetClosingReport)
+            .WithName("GetClosingReport")
+            .WithSummary("Relatório de fechamento do período: esperado vs recebido vs divergente")
+            .Produces<ClosingReportDto>();
     }
 
     private static async Task<IResult> GetSummary(
@@ -37,5 +42,18 @@ public static class DashboardEndpoints
     {
         var overview = await queryService.GetOverviewAsync(fromDate, toDate, ct);
         return Results.Ok(overview);
+    }
+
+    private static async Task<IResult> GetClosingReport(
+        DashboardQueryService queryService,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        CancellationToken ct)
+    {
+        var now  = DateTime.UtcNow;
+        var from = fromDate ?? now.AddDays(-6);
+        var to   = toDate   ?? now;
+        var report = await queryService.GetClosingReportAsync(from, to, ct);
+        return Results.Ok(report);
     }
 }

@@ -90,6 +90,51 @@ namespace Recix.Infrastructure.Persistence.Migrations
                     b.ToTable("charges", (string)null);
                 });
 
+            modelBuilder.Entity("Recix.Domain.Entities.OrgAlertConfig", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<bool>("NotifyAmountMismatch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("notify_amount_mismatch");
+
+                    b.Property<bool>("NotifyDuplicatePayment")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("notify_duplicate_payment");
+
+                    b.Property<bool>("NotifyExpiredChargePaid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("notify_expired_charge_paid");
+
+                    b.Property<bool>("NotifyPaymentWithoutCharge")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("notify_payment_without_charge");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("WebhookUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("webhook_url");
+
+                    b.HasKey("OrganizationId");
+
+                    b.ToTable("org_alert_configs", (string)null);
+                });
+
             modelBuilder.Entity("Recix.Domain.Entities.Organization", b =>
                 {
                     b.Property<Guid>("Id")

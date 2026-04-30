@@ -18,6 +18,8 @@ public sealed class ProcessPaymentEventUseCaseTests
         new(_events, _charges, _reconciliations,
             new ReconciliationEngine(_charges),
             _metrics,
+            new FakeEventBroadcaster(),
+            new FakeAlertNotifier(),
             NullLogger<ProcessPaymentEventUseCase>.Instance);
 
     private static readonly Guid TestOrgId = Guid.Parse("11111111-1111-1111-1111-111111111111");

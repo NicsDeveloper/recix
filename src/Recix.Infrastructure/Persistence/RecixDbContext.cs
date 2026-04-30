@@ -15,6 +15,7 @@ public sealed class RecixDbContext : DbContext
     public DbSet<Organization>              Organizations            => Set<Organization>();
     public DbSet<OrganizationMember>        OrganizationMembers      => Set<OrganizationMember>();
     public DbSet<OrganizationJoinRequest>   OrganizationJoinRequests => Set<OrganizationJoinRequest>();
+    public DbSet<OrgAlertConfig>            OrgAlertConfigs          => Set<OrgAlertConfig>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,5 +26,6 @@ public sealed class RecixDbContext : DbContext
         modelBuilder.ApplyConfiguration(new OrganizationConfiguration());
         modelBuilder.ApplyConfiguration(new OrganizationMemberConfiguration());
         modelBuilder.ApplyConfiguration(new OrganizationJoinRequestConfiguration());
+        modelBuilder.ApplyConfiguration(new OrgAlertConfigConfiguration());
     }
 }

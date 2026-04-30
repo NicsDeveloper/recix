@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Recix.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e0a97e373663a25565eab903e1d2f0028aa68c37")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f3998ee4957b82f8a5b3255274ecae3b5ff010a5")]
 [assembly: System.Reflection.AssemblyProductAttribute("Recix.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Recix.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

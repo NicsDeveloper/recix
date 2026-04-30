@@ -13,15 +13,19 @@ public sealed class CreateChargeUseCase
 
     private readonly ICurrentOrganization _currentOrg;
 
+    private readonly IEventBroadcaster _broadcaster;
+
     public CreateChargeUseCase(
         IChargeRepository charges,
         IPixProvider pixProvider,
         ICurrentOrganization currentOrg,
+        IEventBroadcaster broadcaster,
         ILogger<CreateChargeUseCase> logger)
     {
         _charges     = charges;
         _pixProvider = pixProvider;
         _currentOrg  = currentOrg;
+        _broadcaster = broadcaster;
         _logger      = logger;
     }
 
@@ -47,6 +51,7 @@ public sealed class CreateChargeUseCase
         charge.SetPixCopiaECola(pixResult.PixCopiaECola);
 
         await _charges.AddAsync(charge, cancellationToken);
+        _broadcaster.Publish(RecixEvent.ChargeUpdated(charge.Id, orgId));
 
         _logger.LogInformation(
             "Charge created: {ChargeId} ReferenceId={ReferenceId} Amount={Amount} TxId={TxId}",

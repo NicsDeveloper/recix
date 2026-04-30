@@ -102,8 +102,8 @@ public sealed class PaymentEventProcessorService : BackgroundService
             {
                 await useCase.ExecuteAsync(evt.Id, stoppingToken);
 
-                // Notifica clientes SSE que houve mudança
-                _broadcaster.Publish(RecixEvent.PaymentEventUpdated(evt.Id));
+                // Notifica clientes SSE/SignalR que houve mudança (orgId vem da entidade)
+                _broadcaster.Publish(RecixEvent.PaymentEventUpdated(evt.Id, evt.OrganizationId));
             }
             catch (Exception ex)
             {

@@ -15,7 +15,10 @@ import { ReconciliationsPage } from './pages/ReconciliationsPage'
 import { WebhookSimulatorPage } from './pages/WebhookSimulatorPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { ImportPage } from './pages/ImportPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { useRealtimeEvents } from './hooks/useRealtimeEvents'
+import { useDashboardRealtime } from './hooks/useDashboardRealtime'
 import { LoadingState } from './components/ui/LoadingState'
 
 const queryClient = new QueryClient({
@@ -46,7 +49,8 @@ function App() {
 /** Componente interno para poder usar hooks do QueryClient e Auth */
 function AppCore() {
   const { user, isLoading, organizations, pendingJoinRequest } = useAuth()
-  useRealtimeEvents()
+  useRealtimeEvents()        // SSE — stream de eventos bruto (mantido para compatibilidade)
+  useDashboardRealtime()     // SignalR — invalidação de queries por org
 
   if (isLoading) return <LoadingState />
 
@@ -72,6 +76,8 @@ function AppCore() {
           <Route path="/reconciliations" element={<ReconciliationsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
+          <Route path="/import" element={<ImportPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/webhooks/simulator" element={<WebhookSimulatorPage />} />
           <Route path="/join-requests" element={<JoinRequestsPage />} />
         </Route>

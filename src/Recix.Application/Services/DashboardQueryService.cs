@@ -1,365 +1,306 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Recix.Application.DTOs;
 using Recix.Application.Interfaces;
 using Recix.Domain.Enums;
 
 namespace Recix.Application.Services;
 
-public sealed class DashboardQueryService
+public sealed class DashboardQueryService(
+    IChargeRepository charges,
+    IReconciliationRepository reconciliations,
+    IPaymentEventRepository paymentEvents)
 {
-    private readonly IChargeRepository _charges;
-    private readonly IReconciliationRepository _reconciliations;
-    private readonly IPaymentEventRepository _paymentEvents;
+    // ─── Public ──────────────────────────────────────────────────────────────────
 
-    public DashboardQueryService(
-        IChargeRepository charges,
-        IReconciliationRepository reconciliations,
-        IPaymentEventRepository paymentEvents)
+    public async Task<DashboardSummaryDto> GetSummaryAsync(CancellationToken ct = default)
     {
-        _charges = charges;
-        _reconciliations = reconciliations;
-        _paymentEvents = paymentEvents;
-    }
-
-    public async Task<DashboardSummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default)
-    {
-        var chargesPage = await _charges.ListAsync(null, null, null, 1, int.MaxValue, cancellationToken);
-        var reconciliationsPage = await _reconciliations.ListAsync(null, null, null, 1, int.MaxValue, cancellationToken);
-
-        var charges = chargesPage.Items;
-        var reconciliations = reconciliationsPage.Items;
-
-        return new DashboardSummaryDto
-        {
-            TotalCharges = charges.Count,
-            PaidCharges = charges.Count(c => c.Status == ChargeStatus.Paid),
-            PendingCharges = charges.Count(c => c.Status == ChargeStatus.Pending),
-            DivergentCharges = charges.Count(c => c.Status == ChargeStatus.Divergent),
-            ExpiredCharges = charges.Count(c => c.Status == ChargeStatus.Expired),
-            TotalReceivedAmount = charges
-                .Where(c => c.Status == ChargeStatus.Paid)
-                .Sum(c => c.Amount),
-            TotalDivergentAmount = charges
-                .Where(c => c.Status == ChargeStatus.Divergent)
-                .Sum(c => c.Amount),
-            ReconciliationIssues = new ReconciliationIssuesDto
-            {
-                AmountMismatch = reconciliations.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
-                DuplicatePayment = reconciliations.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
-                PaymentWithoutCharge = reconciliations.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
-                ExpiredChargePaid = reconciliations.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
-                InvalidReference = reconciliations.Count(r => r.Status == ReconciliationStatus.InvalidReference),
-                ProcessingError = reconciliations.Count(r => r.Status == ReconciliationStatus.ProcessingError)
-            }
-        };
+        var chPage    = await charges.ListAsync(null, null, null, 1, int.MaxValue, ct);
+        var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
+        return BuildSummary(chPage.Items, reconPage.Items);
     }
 
     public async Task<DashboardOverviewDto> GetOverviewAsync(
         DateTime? fromDate,
         DateTime? toDate,
-        CancellationToken cancellationToken = default)
+        CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
 
-        var resolvedFrom = (fromDate ?? now).Date;
-        var resolvedTo = (toDate ?? resolvedFrom).Date;
-        if (resolvedTo < resolvedFrom)
-        {
-            (resolvedFrom, resolvedTo) = (resolvedTo, resolvedFrom);
-        }
+        var resolvedFrom = (fromDate ?? now).ToUniversalTime().Date;
+        var resolvedTo   = (toDate   ?? resolvedFrom).ToUniversalTime().Date;
+        if (resolvedTo < resolvedFrom) (resolvedFrom, resolvedTo) = (resolvedTo, resolvedFrom);
 
-        var rangeStart = resolvedFrom;
-        var rangeEndExclusive = resolvedTo.AddDays(1); // fim exclusivo para filtros por DateTime
+        var rangeEnd = resolvedTo.AddDays(1); // exclusivo
+        var days     = (resolvedTo - resolvedFrom).Days + 1;
+        var prevFrom = resolvedFrom.AddDays(-days);
+        var prevTo   = resolvedFrom.AddDays(-1);
 
-        var rangeLengthDays = (resolvedTo - resolvedFrom).Days + 1;
-        var previousFrom = resolvedFrom.AddDays(-rangeLengthDays);
-        var previousTo = resolvedFrom.AddDays(-1);
+        // ─── Cobranças do período ─────────────────────────────────────────────────
+        var chPage    = await charges.ListAsync(null, resolvedFrom, resolvedTo, 1, int.MaxValue, ct);
+        var chList    = chPage.Items;
 
-        // ─── Summary + previous period ─────────────────────────────────────────────
-        var summary = await ComputeSummaryAsync(rangeStart, resolvedTo, cancellationToken);
-        var previousSummary = await ComputeSummaryAsync(previousFrom, previousTo, cancellationToken);
-
-        // ─── Flux series ──────────────────────────────────────────────────────────
-        var chargesInPeriod = await _charges.ListAsync(null, rangeStart, resolvedTo, 1, int.MaxValue, cancellationToken);
-        var reconciliationsInPeriod = await _reconciliations.ListAsync(null, null, null, 1, int.MaxValue, cancellationToken);
-        var reconFiltered = reconciliationsInPeriod.Items
-            .Where(r => r.CreatedAt >= rangeStart && r.CreatedAt < rangeEndExclusive)
+        // ─── Conciliações do período ──────────────────────────────────────────────
+        var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
+        var reconList = reconPage.Items
+            .Where(r => r.CreatedAt >= resolvedFrom && r.CreatedAt < rangeEnd)
             .ToList();
 
-        var fluxSeries = BuildFluxSeries(
-            chargesInPeriod.Items,
-            rangeStart,
-            rangeEndExclusive);
+        // ─── Período anterior ─────────────────────────────────────────────────────
+        var prevChPage    = await charges.ListAsync(null, prevFrom, prevTo, 1, int.MaxValue, ct);
+        var prevReconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
+        var prevReconList = prevReconPage.Items
+            .Where(r => r.CreatedAt >= prevFrom && r.CreatedAt < resolvedFrom)
+            .ToList();
 
-        // ─── Recent tables ────────────────────────────────────────────────────────
-        var recentReconciliations = await MapRecentReconciliationsAsync(
-            reconFiltered,
-            cancellationToken);
+        var summary     = BuildSummary(chList, reconList);
+        var prevSummary = BuildSummary(prevChPage.Items, prevReconList);
+        var fluxSeries  = BuildFluxSeries(chList, resolvedFrom, rangeEnd);
 
-        var recentPaymentEvents = await MapRecentPaymentEventsAsync(
-            rangeStart,
-            rangeEndExclusive,
-            cancellationToken);
+        // ─── Últimas conciliações e pagamentos ────────────────────────────────────
+        var recentRecon   = await MapRecentReconciliationsAsync(reconList, ct);
+        var recentPayment = await MapRecentPaymentEventsAsync(resolvedFrom, rangeEnd, ct);
+        var alerts        = BuildAlerts(reconList);
 
-        // ─── Alerts ───────────────────────────────────────────────────────────────
-        var alerts = BuildAlerts(reconFiltered);
-
-        // ─── UpdatedAt ───────────────────────────────────────────────────────────
-        var latestChargeUpdatedAt = chargesInPeriod.Items
+        var updatedAt = chList
             .Select(c => c.UpdatedAt ?? c.CreatedAt)
+            .Concat(reconList.Select(r => r.CreatedAt))
             .DefaultIfEmpty(now)
             .Max();
-
-        var latestReconCreatedAt = reconFiltered
-            .Select(r => r.CreatedAt)
-            .DefaultIfEmpty(now)
-            .Max();
-
-        var latestPaymentUpdatedAt = recentPaymentEvents
-            .Select(e => e.ProcessedAt ?? e.PaidAt)
-            .DefaultIfEmpty(now)
-            .Max();
-
-        var updatedAt = new[] { latestChargeUpdatedAt, latestReconCreatedAt, latestPaymentUpdatedAt }.Max();
 
         return new DashboardOverviewDto
         {
-            UpdatedAt = updatedAt,
-            Summary = summary,
-            PreviousPeriodSummary = previousSummary,
-            FluxSeries = fluxSeries,
-            RecentReconciliations = recentReconciliations,
-            RecentPaymentEvents = recentPaymentEvents,
-            Alerts = alerts
+            UpdatedAt             = updatedAt,
+            Summary               = summary,
+            PreviousPeriodSummary = prevSummary,
+            FluxSeries            = fluxSeries,
+            RecentReconciliations = recentRecon,
+            RecentPaymentEvents   = recentPayment,
+            Alerts                = alerts,
         };
     }
 
-    private async Task<DashboardSummaryDto> ComputeSummaryAsync(
-        DateTime start,
-        DateTime endInclusive,
-        CancellationToken cancellationToken)
+    // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+    private static DashboardSummaryDto BuildSummary(
+        IReadOnlyList<Domain.Entities.Charge> ch,
+        IReadOnlyList<Domain.Entities.ReconciliationResult> rc) => new()
     {
-        // Repositories já usam CreatedAt como base para filtros de intervalo.
-        var chargesPage = await _charges.ListAsync(null, start, endInclusive, 1, int.MaxValue, cancellationToken);
-        var charges = chargesPage.Items;
-
-        var reconciliationsPage = await _reconciliations.ListAsync(null, null, null, 1, int.MaxValue, cancellationToken);
-        var reconciliations = reconciliationsPage.Items
-            .Where(r => r.CreatedAt >= start && r.CreatedAt < endInclusive.AddDays(1))
-            .ToList();
-
-        return new DashboardSummaryDto
+        TotalCharges          = ch.Count,
+        PaidCharges           = ch.Count(c => c.Status == ChargeStatus.Paid),
+        PendingCharges        = ch.Count(c => c.Status == ChargeStatus.Pending),
+        DivergentCharges      = ch.Count(c => c.Status == ChargeStatus.Divergent),
+        ExpiredCharges        = ch.Count(c => c.Status == ChargeStatus.Expired),
+        TotalReceivedAmount   = ch.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount),
+        TotalDivergentAmount  = ch.Where(c => c.Status == ChargeStatus.Divergent).Sum(c => c.Amount),
+        ReconciliationIssues  = new ReconciliationIssuesDto
         {
-            TotalCharges = charges.Count,
-            PaidCharges = charges.Count(c => c.Status == ChargeStatus.Paid),
-            PendingCharges = charges.Count(c => c.Status == ChargeStatus.Pending),
-            DivergentCharges = charges.Count(c => c.Status == ChargeStatus.Divergent),
-            ExpiredCharges = charges.Count(c => c.Status == ChargeStatus.Expired),
-            TotalReceivedAmount = charges
-                .Where(c => c.Status == ChargeStatus.Paid)
-                .Sum(c => c.Amount),
-            TotalDivergentAmount = charges
-                .Where(c => c.Status == ChargeStatus.Divergent)
-                .Sum(c => c.Amount),
-            ReconciliationIssues = new ReconciliationIssuesDto
-            {
-                AmountMismatch = reconciliations.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
-                DuplicatePayment = reconciliations.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
-                PaymentWithoutCharge = reconciliations.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
-                ExpiredChargePaid = reconciliations.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
-                InvalidReference = reconciliations.Count(r => r.Status == ReconciliationStatus.InvalidReference),
-                ProcessingError = reconciliations.Count(r => r.Status == ReconciliationStatus.ProcessingError)
-            }
-        };
-    }
+            Matched              = rc.Count(r => r.Status == ReconciliationStatus.Matched),
+            AmountMismatch       = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+            DuplicatePayment     = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
+            PaymentWithoutCharge = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
+            ExpiredChargePaid    = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
+            InvalidReference     = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
+            ProcessingError      = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
+        },
+    };
 
     private static IReadOnlyList<FluxSeriesPointDto> BuildFluxSeries(
-        IReadOnlyList<Recix.Domain.Entities.Charge> charges,
+        IReadOnlyList<Domain.Entities.Charge> ch,
         DateTime rangeStart,
-        DateTime rangeEndExclusive)
+        DateTime rangeEnd)
     {
-        const int bucketCount = 8;
+        const int buckets  = 8;
+        var duration       = rangeEnd - rangeStart;
+        var isHourly       = duration.TotalHours <= 24;
+        var step           = TimeSpan.FromTicks(Math.Max(duration.Ticks / (buckets - 1), 1));
 
-        var duration = rangeEndExclusive - rangeStart;
-        var rangeInHours = duration.TotalHours;
-        var isHourly = rangeInHours <= 24;
+        var paid = ch.Where(c => c.Status == ChargeStatus.Paid)
+                     .Select(c => (at: c.UpdatedAt ?? c.CreatedAt, c.Amount))
+                     .Where(x => x.at >= rangeStart && x.at < rangeEnd).ToList();
 
-        var stepTicks = duration.Ticks / (bucketCount - 1);
-        if (stepTicks <= 0)
-            stepTicks = duration.Ticks;
+        var div  = ch.Where(c => c.Status == ChargeStatus.Divergent)
+                     .Select(c => (at: c.UpdatedAt ?? c.CreatedAt, c.Amount))
+                     .Where(x => x.at >= rangeStart && x.at < rangeEnd).ToList();
 
-        var points = new List<FluxSeriesPointDto>(bucketCount);
-
-        var paid = charges
-            .Where(c => c.Status == ChargeStatus.Paid)
-            .Select(c => new { UpdatedAt = c.UpdatedAt ?? c.CreatedAt, c.Amount })
-            .Where(x => x.UpdatedAt >= rangeStart && x.UpdatedAt < rangeEndExclusive)
-            .ToList();
-
-        var divergent = charges
-            .Where(c => c.Status == ChargeStatus.Divergent)
-            .Select(c => new { UpdatedAt = c.UpdatedAt ?? c.CreatedAt, c.Amount })
-            .Where(x => x.UpdatedAt >= rangeStart && x.UpdatedAt < rangeEndExclusive)
-            .ToList();
-
-        for (var i = 0; i < bucketCount; i++)
+        return Enumerable.Range(0, buckets).Select(i =>
         {
-            var t = rangeStart.AddTicks(i * stepTicks);
-
-            var received = paid
-                .Where(x => x.UpdatedAt <= t)
-                .Sum(x => x.Amount);
-
-            var div = divergent
-                .Where(x => x.UpdatedAt <= t)
-                .Sum(x => x.Amount);
-
-            var expected = received - div;
-
-            var label = isHourly ? t.ToString("HH:mm") : t.ToString("dd/MM");
-
-            points.Add(new FluxSeriesPointDto
+            var t        = rangeStart + step * i;
+            var received = paid.Where(x => x.at <= t).Sum(x => x.Amount);
+            var diverged = div.Where(x => x.at <= t).Sum(x => x.Amount);
+            return new FluxSeriesPointDto
             {
-                Label = label,
+                Label    = isHourly ? t.ToString("HH:mm") : t.ToString("dd/MM"),
                 Received = received,
-                Expected = expected,
-                Divergent = div
-            });
-        }
-
-        return points;
+                Expected = received - diverged,
+                Divergent = diverged,
+            };
+        }).ToList();
     }
 
     private async Task<IReadOnlyList<RecentReconciliationDto>> MapRecentReconciliationsAsync(
-        IReadOnlyList<Recix.Domain.Entities.ReconciliationResult> reconFiltered,
-        CancellationToken cancellationToken)
+        IReadOnlyList<Domain.Entities.ReconciliationResult> rc,
+        CancellationToken ct)
     {
-        var latest = reconFiltered
-            .OrderByDescending(r => r.CreatedAt)
-            .Take(5)
-            .ToList();
+        var latest = rc.OrderByDescending(r => r.CreatedAt).Take(10).ToList();
+        if (latest.Count == 0) return [];
 
-        if (latest.Count == 0)
-            return Array.Empty<RecentReconciliationDto>();
+        var chargeCache   = new Dictionary<Guid, Domain.Entities.Charge>();
+        var paymentCache  = new Dictionary<Guid, Domain.Entities.PaymentEvent>();
+        var result        = new List<RecentReconciliationDto>(latest.Count);
 
-        // Mapeia dependências (Charge + PaymentEvent) apenas para os itens recentes.
-        var chargeCache = new Dictionary<Guid, Recix.Domain.Entities.Charge>();
-        var paymentCache = new Dictionary<Guid, Recix.Domain.Entities.PaymentEvent>();
-
-        var result = new List<RecentReconciliationDto>(latest.Count);
         foreach (var r in latest)
         {
-            string? chargeReferenceId = null;
+            string? chargeRef = null;
             if (r.ChargeId.HasValue)
             {
-                if (!chargeCache.TryGetValue(r.ChargeId.Value, out var ch))
+                if (!chargeCache.TryGetValue(r.ChargeId.Value, out var c))
                 {
-                    ch = await _charges.GetByIdAsync(r.ChargeId.Value, cancellationToken);
-                    if (ch is not null)
-                        chargeCache[r.ChargeId.Value] = ch;
+                    c = await charges.GetByIdAsync(r.ChargeId.Value, ct);
+                    if (c is not null) chargeCache[r.ChargeId.Value] = c;
                 }
-
-                if (ch is not null)
-                    chargeReferenceId = ch.ReferenceId;
+                chargeRef = c?.ReferenceId;
             }
 
-            Recix.Domain.Entities.PaymentEvent? paymentEvent = null;
-            if (!paymentCache.TryGetValue(r.PaymentEventId, out paymentEvent))
+            if (!paymentCache.TryGetValue(r.PaymentEventId, out var pe))
             {
-                paymentEvent = await _paymentEvents.GetByIdAsync(r.PaymentEventId, cancellationToken);
-                if (paymentEvent is not null)
-                    paymentCache[r.PaymentEventId] = paymentEvent;
+                pe = await paymentEvents.GetByIdAsync(r.PaymentEventId, ct);
+                if (pe is not null) paymentCache[r.PaymentEventId] = pe;
             }
 
             result.Add(new RecentReconciliationDto
             {
-                Id = r.Id,
-                Status = r.Status.ToString(),
-                Reason = r.Reason,
-                ExpectedAmount = r.ExpectedAmount,
-                PaidAmount = r.PaidAmount,
-                ChargeReferenceId = chargeReferenceId,
-                PaymentEventId = paymentEvent?.EventId ?? r.PaymentEventId.ToString(),
-                CreatedAt = r.CreatedAt
+                Id               = r.Id,
+                Status           = r.Status.ToString(),
+                Reason           = r.Reason,
+                ExpectedAmount   = r.ExpectedAmount,
+                PaidAmount       = r.PaidAmount,
+                ChargeReferenceId = chargeRef,
+                PaymentEventId   = pe?.EventId ?? r.PaymentEventId.ToString(),
+                CreatedAt        = r.CreatedAt,
             });
         }
-
         return result;
     }
 
     private async Task<IReadOnlyList<RecentPaymentEventDto>> MapRecentPaymentEventsAsync(
-        DateTime rangeStart,
-        DateTime rangeEndExclusive,
-        CancellationToken cancellationToken)
+        DateTime rangeStart, DateTime rangeEnd, CancellationToken ct)
     {
-        var processedPage = await _paymentEvents.ListAsync(
-            PaymentEventStatus.Processed,
-            1,
-            int.MaxValue,
-            cancellationToken);
+        var page = await paymentEvents.ListAsync(null, 1, int.MaxValue, ct);
 
-        // Prioriza “últimos” com base em paidAt, já que o texto do card pede “Recebido em”.
-        var filtered = processedPage.Items
-            .Where(e => e.PaidAt >= rangeStart && e.PaidAt < rangeEndExclusive)
+        var filtered = page.Items
+            .Where(e => e.PaidAt >= rangeStart && e.PaidAt < rangeEnd)
             .OrderByDescending(e => e.PaidAt)
-            .Take(5)
+            .Take(10)
             .ToList();
 
+        // Se nenhum no período, retorna os 5 mais recentes globalmente
         if (filtered.Count == 0)
-            return Array.Empty<RecentPaymentEventDto>();
+            filtered = page.Items.OrderByDescending(e => e.PaidAt).Take(5).ToList();
 
         return filtered.Select(e => new RecentPaymentEventDto
         {
-            EventId = e.EventId,
+            EventId     = e.EventId,
             ReferenceId = e.ReferenceId,
-            PaidAmount = e.PaidAmount,
-            Provider = e.Provider,
-            Status = e.Status.ToString(),
-            PaidAt = e.PaidAt,
+            PaidAmount  = e.PaidAmount,
+            Provider    = e.Provider,
+            Status      = e.Status.ToString(),
+            PaidAt      = e.PaidAt,
             ProcessedAt = e.ProcessedAt,
-            CreatedAt = e.CreatedAt
+            CreatedAt   = e.CreatedAt,
         }).ToList();
     }
 
-    private static IReadOnlyList<DashboardAlertDto> BuildAlerts(IReadOnlyList<Recix.Domain.Entities.ReconciliationResult> reconFiltered)
+    // ─── Closing Report ──────────────────────────────────────────────────────────
+
+    public async Task<ClosingReportDto> GetClosingReportAsync(
+        DateTime from,
+        DateTime to,
+        CancellationToken ct = default)
+    {
+        var fromUtc  = from.ToUniversalTime().Date;
+        var toUtc    = to.ToUniversalTime().Date;
+        if (toUtc < fromUtc) (fromUtc, toUtc) = (toUtc, fromUtc);
+        var rangeEnd = toUtc.AddDays(1);
+
+        var chPage    = await charges.ListAsync(null, fromUtc, toUtc, 1, int.MaxValue, ct);
+        var ch        = chPage.Items;
+        var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
+        var rc        = reconPage.Items
+            .Where(r => r.CreatedAt >= fromUtc && r.CreatedAt < rangeEnd)
+            .ToList();
+
+        var paid     = ch.Where(c => c.Status == ChargeStatus.Paid).ToList();
+        var divg     = ch.Where(c => c.Status == ChargeStatus.Divergent).ToList();
+        var pending  = ch.Where(c => c.Status == ChargeStatus.Pending).ToList();
+
+        var expected  = ch.Sum(c => c.Amount);
+        var received  = paid.Sum(c => c.Amount);
+        var divergent = divg.Sum(c => c.Amount);
+        var pendAmt   = pending.Sum(c => c.Amount);
+        var recovery  = expected > 0 ? Math.Round(received / expected * 100, 2) : 0m;
+
+        // Cobranças sem nenhuma conciliação no período
+        var reconciledChargeIds = rc.Where(r => r.ChargeId.HasValue)
+                                    .Select(r => r.ChargeId!.Value)
+                                    .ToHashSet();
+
+        var unreconciled = ch
+            .Where(c => c.Status is ChargeStatus.Pending or ChargeStatus.Expired
+                        && !reconciledChargeIds.Contains(c.Id))
+            .OrderByDescending(c => c.Amount)
+            .Take(50)
+            .Select(c => new UnreconciledChargeDto
+            {
+                Id          = c.Id,
+                ReferenceId = c.ReferenceId ?? c.ExternalId,
+                Amount      = c.Amount,
+                Status      = c.Status.ToString(),
+                ExpiresAt   = c.ExpiresAt,
+                CreatedAt   = c.CreatedAt,
+            })
+            .ToList();
+
+        return new ClosingReportDto
+        {
+            From             = fromUtc,
+            To               = toUtc,
+            TotalCharges     = ch.Count,
+            PaidCharges      = paid.Count,
+            PendingCharges   = pending.Count,
+            DivergentCharges = divg.Count,
+            ExpiredCharges   = ch.Count(c => c.Status == ChargeStatus.Expired),
+            ExpectedAmount   = expected,
+            ReceivedAmount   = received,
+            DivergentAmount  = divergent,
+            PendingAmount    = pendAmt,
+            RecoveryRate     = recovery,
+            ReconciliationsTotal          = rc.Count,
+            ReconciliationsMatched        = rc.Count(r => r.Status == ReconciliationStatus.Matched),
+            ReconciliationsAmountMismatch = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+            ReconciliationsDuplicate      = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
+            ReconciliationsNoCharge       = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
+            ReconciliationsExpiredPaid    = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
+            ReconciliationsInvalidRef     = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
+            ReconciliationsError          = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
+            Unreconciled     = unreconciled,
+        };
+    }
+
+    private static IReadOnlyList<DashboardAlertDto> BuildAlerts(
+        IReadOnlyList<Domain.Entities.ReconciliationResult> rc)
     {
         var now = DateTime.UtcNow;
+        DateTime Last(IEnumerable<Domain.Entities.ReconciliationResult> items) =>
+            items.Select(x => x.CreatedAt).DefaultIfEmpty(now).Max();
 
-        var amountMismatch = reconFiltered.Where(r => r.Status == ReconciliationStatus.AmountMismatch).ToList();
-        var duplicatePayment = reconFiltered.Where(r => r.Status == ReconciliationStatus.DuplicatePayment).ToList();
-        var paymentWithoutCharge = reconFiltered.Where(r => r.Status == ReconciliationStatus.PaymentWithoutCharge).ToList();
+        var mm  = rc.Where(r => r.Status == ReconciliationStatus.AmountMismatch).ToList();
+        var dup = rc.Where(r => r.Status == ReconciliationStatus.DuplicatePayment).ToList();
+        var pwc = rc.Where(r => r.Status == ReconciliationStatus.PaymentWithoutCharge).ToList();
 
-        DateTime lastOrDefault(List<Recix.Domain.Entities.ReconciliationResult> items) =>
-            items.Count == 0 ? now : items.Max(x => x.CreatedAt);
-
-        return new List<DashboardAlertDto>
+        return new[]
         {
-            new DashboardAlertDto
-            {
-                Type = "amountMismatch",
-                Count = amountMismatch.Count,
-                LastDetectedAt = lastOrDefault(amountMismatch),
-                Description = "Divergência de valor detectada no período.",
-                RouteStatus = ReconciliationStatus.AmountMismatch.ToString()
-            },
-            new DashboardAlertDto
-            {
-                Type = "duplicatePayment",
-                Count = duplicatePayment.Count,
-                LastDetectedAt = lastOrDefault(duplicatePayment),
-                Description = "Pagamentos duplicados detectados no período.",
-                RouteStatus = ReconciliationStatus.DuplicatePayment.ToString()
-            },
-            new DashboardAlertDto
-            {
-                Type = "paymentWithoutCharge",
-                Count = paymentWithoutCharge.Count,
-                LastDetectedAt = lastOrDefault(paymentWithoutCharge),
-                Description = "Pagamentos sem cobrança correspondente detectados.",
-                RouteStatus = ReconciliationStatus.PaymentWithoutCharge.ToString()
-            }
+            new DashboardAlertDto { Type = "amountMismatch",       Count = mm.Count,  LastDetectedAt = Last(mm),  Description = "Divergência de valor detectada no período.",                  RouteStatus = "AmountMismatch" },
+            new DashboardAlertDto { Type = "duplicatePayment",     Count = dup.Count, LastDetectedAt = Last(dup), Description = "Pagamentos duplicados detectados no período.",               RouteStatus = "DuplicatePayment" },
+            new DashboardAlertDto { Type = "paymentWithoutCharge", Count = pwc.Count, LastDetectedAt = Last(pwc), Description = "Pagamentos sem cobrança correspondente detectados.",         RouteStatus = "PaymentWithoutCharge" },
         };
     }
 }

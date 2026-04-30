@@ -32,6 +32,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<IOrganizationJoinRequestRepository, OrganizationJoinRequestRepository>();
+        services.AddScoped<IOrgAlertConfigRepository, OrgAlertConfigRepository>();
         services.AddScoped<IAiInsightService, FakeAiInsightService>();
 
         services.AddScoped<ReconciliationEngine>();
@@ -44,6 +45,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<GoogleAuthUseCase>();
         services.AddScoped<SwitchOrgUseCase>();
         services.AddScoped<ReviewJoinRequestUseCase>();
+        services.AddScoped<ImportBankStatementUseCase>();
         services.AddSingleton<PaymentReliabilityMetrics>();
 
         // ─── Auth ─────────────────────────────────────────────────────────────────
@@ -71,6 +73,21 @@ public static class InfrastructureServiceExtensions
                     IssuerSigningKey         = new SymmetricSecurityKey(
                         Encoding.UTF8.GetBytes(jwtOptions.Secret)),
                 };
+
+                // SignalR WebSocket: token via query string ?access_token=...
+                opts.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+                {
+                    OnMessageReceived = ctx =>
+                    {
+                        var token = ctx.Request.Query["access_token"].ToString();
+                        if (!string.IsNullOrEmpty(token) &&
+                            ctx.Request.Path.StartsWithSegments("/hubs"))
+                        {
+                            ctx.Token = token;
+                        }
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
         services.AddAuthorizationBuilder()
@@ -89,8 +106,13 @@ public static class InfrastructureServiceExtensions
         // Singleton: mantém a lista de subscribers SSE entre requests
         services.AddSingleton<IEventBroadcaster, InMemoryEventBroadcaster>();
 
+        // Notificador de alertas (outbound webhook)
+        services.AddHttpClient("AlertNotifier");
+        services.AddScoped<IAlertNotifier, HttpAlertNotifier>();
+
         services.AddHostedService<PaymentEventProcessorService>();
         services.AddHostedService<ExpirationSweepService>();
+        // SignalRBridgeService é registrado em Program.cs (vive em Recix.Api)
 
         return services;
     }
