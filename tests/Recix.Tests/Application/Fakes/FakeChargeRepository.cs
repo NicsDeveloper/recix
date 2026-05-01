@@ -36,5 +36,11 @@ public sealed class FakeChargeRepository : IChargeRepository
     public Task<List<Charge>> GetExpiredPendingAsync(CancellationToken ct = default) =>
         Task.FromResult(_store.Where(c => c.Status == ChargeStatus.Pending && c.ExpiresAt < DateTime.UtcNow).ToList());
 
+    public Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(_store
+            .Where(c => c.Status == ChargeStatus.Pending && c.Amount == amount && c.OrganizationId == organizationId)
+            .OrderBy(c => c.CreatedAt)
+            .ToList());
+
     public IReadOnlyList<Charge> All => _store;
 }

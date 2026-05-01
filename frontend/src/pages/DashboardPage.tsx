@@ -1,18 +1,20 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, CheckCircle, Copy, Ban, Clock,
   ArrowRight, ShoppingBag, Building2, TrendingUp,
-  Download, FileText, Bell, ChevronRight, Info,
+  Download, FileText, Bell, ChevronRight, X,
 } from 'lucide-react'
 import { dashboardService } from '../services/dashboardService'
 import { LoadingState }     from '../components/ui/LoadingState'
 import { ErrorState }       from '../components/ui/ErrorState'
 import { DashboardHeader }  from '../components/layout/DashboardHeader'
 import { FluxFinanceiroLineChart } from '../components/dashboard/FluxFinanceiroLineChart'
-import type { ReconciliationStatus } from '../types'
-import { formatCurrency, formatDateTime } from '../lib/formatters'
+import { DashboardKpiCard } from '../components/dashboard/DashboardKpiCard'
+import type { FluxPoint, ReconciliationStatus, RecentReconciliation, DashboardSummary } from '../types'
+import { formatCurrency } from '../lib/formatters'
+import { effectiveDivergenceAmount } from '../lib/dashboardSummary'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,31 @@ function fmtShort(iso: string | null | undefined) {
     const mm    = String(d.getMinutes()).padStart(2, '0')
     return `${day}/${month}, ${hh}:${mm}`
   } catch { return iso ?? '—' }
+}
+
+function sparkFromSeries(series: FluxPoint[], key: 'received' | 'expected' | 'divergent'): number[] {
+  const raw = series.map(p => Number(p[key]) || 0)
+  if (raw.length >= 2) return raw
+  const v = raw[0] ?? 1
+  return [v * 0.2, v * 0.45, v * 0.7, Math.max(v, 1)]
+}
+
+type IssueAmounts = {
+  amountMismatch: number
+  duplicatePayment: number
+  paymentWithoutCharge: number
+  expiredChargePaid: number
+}
+
+function sumsFromRecent(recent: RecentReconciliation[], s: DashboardSummary): IssueAmounts {
+  const sumPaid = (st: ReconciliationStatus) =>
+    recent.filter(r => r.status === st).reduce((acc, r) => acc + r.paidAmount, 0)
+  return {
+    amountMismatch:       s.totalDivergentAmount,
+    duplicatePayment:     sumPaid('DuplicatePayment'),
+    paymentWithoutCharge: sumPaid('PaymentWithoutCharge'),
+    expiredChargePaid:    sumPaid('ExpiredChargePaid'),
+  }
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -67,106 +94,127 @@ function Badge({ status }: { status: ReconciliationStatus | string }) {
 // ─── Verdict block ─────────────────────────────────────────────────────────────
 
 function VerdictBlock({
-  isOk, divergentAmt, receivedAmt, expectedAmt,
-}: { isOk: boolean; divergentAmt: number; receivedAmt: number; expectedAmt: number }) {
+  isOk, divergentAmt, receivedAmt, expectedAmt, fluxSeries, nonFinancialIssuesOnly, onDismiss,
+}: {
+  isOk: boolean
+  divergentAmt: number
+  receivedAmt: number
+  expectedAmt: number
+  fluxSeries: FluxPoint[]
+  nonFinancialIssuesOnly?: boolean
+  onDismiss?: () => void
+}) {
   const navigate = useNavigate()
+  const spExp = sparkFromSeries(fluxSeries, 'expected')
+  const spRecv = sparkFromSeries(fluxSeries, 'received')
+  const spDiv = sparkFromSeries(fluxSeries, 'divergent')
 
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-gray-800">
-
-        {/* ── Alert panel ── */}
-        <div className="flex items-start gap-4 p-6">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${isOk ? 'bg-green-500/15' : 'bg-red-500/15'}`}>
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
+      {/* Alert card */}
+      <div
+        className={[
+          'lg:col-span-5 rounded-2xl border p-6 flex flex-col justify-center min-h-[200px]',
+          isOk
+            ? 'border-green-500/25 bg-gradient-to-br from-green-950/50 to-gray-950 shadow-[0_0_40px_-12px_rgba(34,197,94,0.25)]'
+            : 'border-red-500/30 bg-gradient-to-br from-red-950/70 to-gray-950 shadow-[0_0_48px_-12px_rgba(239,68,68,0.35)]',
+        ].join(' ')}
+      >
+        <div className="flex items-start gap-4">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${isOk ? 'bg-green-500/15' : 'bg-red-500/20'}`}>
             {isOk
-              ? <CheckCircle size={22} className="text-green-400" />
-              : <AlertTriangle size={22} className="text-red-400" />}
+              ? <CheckCircle size={26} className="text-green-400" />
+              : <AlertTriangle size={26} className="text-red-400" />}
           </div>
-          <div>
-            <p className={`text-xs font-bold mb-1 ${isOk ? 'text-green-400' : 'text-red-400'}`}>
-              {isOk ? 'Tudo certo!' : 'Atenção!'}
-            </p>
+          <div className="min-w-0 flex-1 relative">
+            {!isOk && onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="absolute -top-1 -right-1 p-1 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/10 transition-colors"
+                title="Fechar alerta"
+              >
+                <X size={16} />
+              </button>
+            )}
             {isOk ? (
               <>
-                <p className="text-xl font-bold text-gray-50 leading-snug">
+                <p className="text-lg font-bold text-gray-50 leading-snug">
                   Seus pagamentos estão <span className="text-green-400">conciliados</span>
                 </p>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-gray-400 mt-2">
                   Todos os valores recebidos batem com o esperado.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-xl font-bold text-gray-50 leading-snug">
-                  Seu financeiro <span className="text-orange-400">NÃO</span> está conciliado
+                <p className="text-lg sm:text-xl font-bold text-gray-50 leading-snug">
+                  <span className="text-red-400">Atenção!</span>{' '}
+                  Seu financeiro <span className="text-orange-400 font-extrabold">NÃO</span> está conciliado
                 </p>
-                <p className="text-sm text-gray-400 mt-1">Encontramos divergências que totalizam</p>
-                <p className="text-3xl font-black text-red-400 tabular-nums mt-1.5 tracking-tight">
-                  {formatCurrency(divergentAmt)}
-                </p>
-                <button
-                  onClick={() => navigate('/reconciliations?status=AmountMismatch')}
-                  className="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-sm font-semibold transition-all"
-                >
-                  Ver divergências <ArrowRight size={14} />
-                </button>
+                {nonFinancialIssuesOnly ? (
+                  <p className="text-sm text-gray-400 mt-2">
+                    Há pendências de conciliação que precisam de revisão. Neste período não há valor monetário
+                    associado a essas ocorrências no total exibido.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-400 mt-2">
+                      Encontramos divergências que totalizam
+                    </p>
+                    <p className="text-3xl font-black text-red-400 tabular-nums mt-3 tracking-tight">
+                      {formatCurrency(divergentAmt)}
+                    </p>
+                  </>
+                )}
+                <div className="flex flex-wrap gap-2 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/reconciliations?filter=divergent')}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors shadow-lg shadow-red-500/20"
+                  >
+                    Ver divergências <ArrowRight size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/reconciliations')}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-sm font-semibold transition-colors"
+                  >
+                    Entenda os motivos
+                  </button>
+                </div>
               </>
             )}
           </div>
         </div>
+      </div>
 
-        {/* ── Metric: Total esperado ── */}
-        <MetricPanel
-          label="Total esperado"
+      {/* KPI com sparklines */}
+      <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <DashboardKpiCard
+          title="Total esperado"
           value={formatCurrency(expectedAmt)}
-          sub="Valor das vendas"
-          valueCls="text-sky-400"
-          icon={<ShoppingBag size={26} className="text-teal-400" />}
-          iconBg="bg-teal-500/15"
+          icon={<ShoppingBag size={20} />}
+          trend="info"
+          sparkValues={spExp}
+          valueClassName="text-sky-400"
         />
-
-        {/* ── Metric: Total recebido ── */}
-        <MetricPanel
-          label="Total recebido"
+        <DashboardKpiCard
+          title="Total recebido"
           value={formatCurrency(receivedAmt)}
-          sub="Valor que entrou"
-          valueCls="text-green-400"
-          icon={<Building2 size={26} className="text-green-400" />}
-          iconBg="bg-green-500/15"
+          icon={<Building2 size={20} />}
+          trend="success"
+          sparkValues={spRecv}
+          valueClassName="text-green-400"
         />
-
-        {/* ── Metric: Diferença ── */}
-        <MetricPanel
-          label="Diferença"
+        <DashboardKpiCard
+          title="Diferença"
           value={formatCurrency(divergentAmt)}
-          sub={divergentAmt > 0 ? 'Acima do esperado' : divergentAmt < 0 ? 'Abaixo do esperado' : 'Tudo conciliado'}
-          valueCls={isOk ? 'text-green-400' : 'text-red-400'}
-          icon={<TrendingUp size={26} className={isOk ? 'text-green-400' : 'text-red-400'} />}
-          iconBg={isOk ? 'bg-green-500/15' : 'bg-red-500/15'}
+          icon={<TrendingUp size={20} />}
+          trend={isOk ? 'success' : 'danger'}
+          sparkValues={spDiv}
+          valueClassName={isOk ? 'text-green-400' : 'text-red-400'}
         />
-      </div>
-    </div>
-  )
-}
-
-function MetricPanel({ label, value, sub, valueCls, icon, iconBg }: {
-  label: string; value: string; sub: string
-  valueCls: string; icon: React.ReactNode; iconBg: string
-}) {
-  return (
-    <div className="flex flex-col justify-between p-6 gap-3">
-      <div>
-        <div className="flex items-center gap-1.5 mb-2">
-          <p className="text-xs text-gray-400 font-medium">{label}</p>
-          <Info size={11} className="text-gray-600" />
-        </div>
-        <p className={`text-2xl font-black tabular-nums tracking-tight leading-none ${valueCls}`}>
-          {value}
-        </p>
-        <p className="text-xs text-gray-500 mt-1.5">{sub}</p>
-      </div>
-      <div className={`w-11 h-11 rounded-xl ${iconBg} flex items-center justify-center`}>
-        {icon}
       </div>
     </div>
   )
@@ -174,11 +222,17 @@ function MetricPanel({ label, value, sub, valueCls, icon, iconBg }: {
 
 // ─── Problems section ─────────────────────────────────────────────────────────
 
-const PROBLEM_DEFS = [
-  { key: 'amountMismatch',       icon: <AlertTriangle size={18} />, color: '#ef4444', bg: 'bg-red-500/15',    label: 'Valor divergente',    getAmt: (s: { totalDivergentAmount: number }) => s.totalDivergentAmount },
-  { key: 'duplicatePayment',     icon: <Copy         size={18} />, color: '#f97316', bg: 'bg-orange-500/15', label: 'Pagamento duplicado', getAmt: () => 0 },
-  { key: 'paymentWithoutCharge', icon: <Ban          size={18} />, color: '#eab308', bg: 'bg-yellow-500/15', label: 'Sem cobrança',        getAmt: () => 0 },
-  { key: 'expiredChargePaid',    icon: <Clock        size={18} />, color: '#6b7280', bg: 'bg-gray-500/15',   label: 'Cobrança expirada',   getAmt: () => 0 },
+const PROBLEM_DEFS: Array<{
+  key: keyof IssueAmounts
+  icon: ReactNode
+  color: string
+  bg: string
+  label: string
+}> = [
+  { key: 'amountMismatch',       icon: <AlertTriangle size={18} />, color: '#ef4444', bg: 'bg-red-500/15',    label: 'Valor divergente' },
+  { key: 'duplicatePayment',     icon: <Copy         size={18} />, color: '#f97316', bg: 'bg-orange-500/15', label: 'Pagamento duplicado' },
+  { key: 'paymentWithoutCharge', icon: <Ban          size={18} />, color: '#eab308', bg: 'bg-yellow-500/15', label: 'Pagamento sem venda' },
+  { key: 'expiredChargePaid',    icon: <Clock        size={18} />, color: '#6b7280', bg: 'bg-gray-500/15',   label: 'Cobrança expirada' },
 ]
 
 function ProblemCard({ icon, color, bg, count, label, amount }: {
@@ -209,17 +263,18 @@ function ProblemCard({ icon, color, bg, count, label, amount }: {
 // ─── Quick actions ─────────────────────────────────────────────────────────────
 
 const QUICK_ACTIONS = [
-  { icon: <Download size={18} />,      bg: 'bg-indigo-500/15', color: '#818cf8', title: 'Importar extrato',    sub: 'Importe um novo arquivo',         to: '/import' },
-  { icon: <FileText size={18} />,      bg: 'bg-cyan-500/15',   color: '#22d3ee', title: 'Gerar relatório',     sub: 'Baixe o relatório do período',     to: '/reports' },
-  { icon: <AlertTriangle size={18} />, bg: 'bg-orange-500/15', color: '#f97316', title: 'Ver divergências',    sub: 'Analise todas as divergências',    to: '/reconciliations?status=AmountMismatch' },
-  { icon: <Bell size={18} />,          bg: 'bg-purple-500/15', color: '#a78bfa', title: 'Configurar alertas',  sub: 'Receba avisos importantes',        to: '/settings' },
+  { icon: <Download size={18} />,      bg: 'bg-indigo-500/15', color: '#818cf8', title: 'Importar extrato',    sub: 'Envie seu extrato bancário.',      to: '/import' },
+  { icon: <FileText size={18} />,      bg: 'bg-cyan-500/15',   color: '#22d3ee', title: 'Gerar relatório',     sub: 'Baixe em PDF ou Excel.',           to: '/reports' },
+  { icon: <AlertTriangle size={18} />, bg: 'bg-orange-500/15', color: '#f97316', title: 'Ver divergências',    sub: 'Analise e resolva pendências.',     to: '/reconciliations?filter=divergent' },
+  { icon: <Bell size={18} />,          bg: 'bg-amber-500/15',   color: '#fbbf24', title: 'Configurar alertas',  sub: 'Receba avisos importantes.',       to: '/alerts' },
 ]
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const [fromDate, setFromDate] = useState(todayISO)
-  const [toDate,   setToDate]   = useState(todayISO)
+  const [fromDate, setFromDate]           = useState(todayISO)
+  const [toDate,   setToDate]             = useState(todayISO)
+  const [verdictDismissed, setVerdictDismissed] = useState(false)
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey:       ['dashboard-overview', fromDate, toDate],
@@ -236,8 +291,10 @@ export function DashboardPage() {
   const ri     = s.reconciliationIssues
   const isOk   = (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid + ri.invalidReference) === 0
   const recvAmt = s.totalReceivedAmount
-  const divAmt  = s.totalDivergentAmount
+  const divAmt  = effectiveDivergenceAmount(s)
   const expAmt  = Math.max(0, recvAmt - divAmt)
+  const issueAmts = sumsFromRecent(data.recentReconciliations, s)
+  const nonFinancialIssuesOnly = !isOk && divAmt === 0
 
   return (
     <div className="space-y-5">
@@ -245,7 +302,7 @@ export function DashboardPage() {
       {/* Header */}
       <DashboardHeader
         title="Dashboard"
-        subtitle="Visão geral da sua conciliação financeira em tempo real"
+        subtitle="Visão geral da conciliação financeira em tempo real"
         fromDate={fromDate} toDate={toDate}
         updatedAt={data.updatedAt}
         onFromDateChange={setFromDate}
@@ -253,7 +310,17 @@ export function DashboardPage() {
       />
 
       {/* 1 — Verdict */}
-      <VerdictBlock isOk={isOk} divergentAmt={divAmt} receivedAmt={recvAmt} expectedAmt={expAmt} />
+      {!verdictDismissed && (
+        <VerdictBlock
+          isOk={isOk}
+          divergentAmt={divAmt}
+          receivedAmt={recvAmt}
+          expectedAmt={expAmt}
+          fluxSeries={data.fluxSeries}
+          nonFinancialIssuesOnly={nonFinancialIssuesOnly}
+          onDismiss={() => setVerdictDismissed(true)}
+        />
+      )}
 
       {/* 2 — Problems + Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -262,7 +329,7 @@ export function DashboardPage() {
         <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-200">Resumo das divergências</h2>
-            <Link to="/reconciliations?status=AmountMismatch"
+            <Link to="/reconciliations?filter=divergent"
               className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               Ver todas as divergências <ArrowRight size={12} />
             </Link>
@@ -276,7 +343,7 @@ export function DashboardPage() {
                 bg={p.bg}
                 count={ri[p.key as keyof typeof ri] as number}
                 label={p.label}
-                amount={p.getAmt(s)}
+                amount={issueAmts[p.key]}
               />
             ))}
           </div>
@@ -305,7 +372,7 @@ export function DashboardPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['STATUS', 'COBRANÇA', 'ESPERADO', 'PAGO', 'DIFERENÇA', 'DATA', ''].map(h => (
+                  {['STATUS', 'REFERÊNCIA', 'ESPERADO', 'PAGO', 'DIFERENÇA', 'DATA', ''].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                       {h}
                     </th>

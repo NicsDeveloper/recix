@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Recix.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+92c46e118bca8095cd98c6a444553d0e8777d7b8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5e20d44d426e45806d6726be462909a02be11c51")]
 [assembly: System.Reflection.AssemblyProductAttribute("Recix.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Recix.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

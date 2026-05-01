@@ -85,4 +85,13 @@ public sealed class PaymentEvent
         Status = PaymentEventStatus.Received;
         ProcessedAt = null;
     }
+
+    public void RequeueForReReconciliation()
+    {
+        if (Status != PaymentEventStatus.Processed)
+            throw new DomainException($"Cannot requeue a {Status} event for re-reconciliation.");
+
+        Status = PaymentEventStatus.Received;
+        ProcessedAt = null;
+    }
 }

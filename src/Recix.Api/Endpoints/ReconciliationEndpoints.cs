@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Recix.Application.DTOs;
 using Recix.Application.Interfaces;
+using Recix.Application.Services;
 using Recix.Domain.Enums;
 
 namespace Recix.Api.Endpoints;
@@ -15,6 +16,11 @@ public static class ReconciliationEndpoints
             .WithName("ListReconciliations")
             .WithSummary("Lista resultados de conciliação")
             .Produces<PagedResult<ReconciliationDto>>();
+
+        group.MapGet("/enriched", ListEnrichedReconciliations)
+            .WithName("ListEnrichedReconciliations")
+            .WithSummary("Lista conciliações enriquecidas com referência da cobrança e provedor")
+            .Produces<PagedResult<RecentReconciliationDto>>();
     }
 
     private static async Task<IResult> ListReconciliations(
@@ -36,5 +42,19 @@ public static class ReconciliationEndpoints
             PageSize = result.PageSize
         };
         return Results.Ok(mapped);
+    }
+
+    private static async Task<IResult> ListEnrichedReconciliations(
+        DashboardQueryService queryService,
+        [FromQuery] string? status,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        ReconciliationStatus? statusEnum = Enum.TryParse<ReconciliationStatus>(status, true, out var parsed) ? parsed : null;
+        var result = await queryService.GetReconciliationsListAsync(statusEnum, fromDate, toDate, page, pageSize, ct);
+        return Results.Ok(result);
     }
 }

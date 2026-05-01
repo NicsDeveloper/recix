@@ -50,6 +50,14 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
            .Where(c => c.Status == ChargeStatus.Pending && c.ExpiresAt < DateTime.UtcNow)
            .ToListAsync(ct);
 
+    public Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken ct = default) =>
+        db.Charges
+          .Where(c => c.OrganizationId == organizationId
+                   && c.Status        == ChargeStatus.Pending
+                   && c.Amount        == amount)
+          .OrderBy(c => c.CreatedAt)   // FIFO: oldest first
+          .ToListAsync(ct);
+
     public async Task<PagedResult<Charge>> ListAsync(
         ChargeStatus? status,
         DateTime? fromDate,

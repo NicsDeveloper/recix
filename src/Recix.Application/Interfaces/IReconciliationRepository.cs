@@ -15,4 +15,11 @@ public interface IReconciliationRepository
         int page,
         int pageSize,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ReconciliationResult>> GetByStatusAndOrganizationAsync(
+        ReconciliationStatus status,
+        Guid organizationId,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }

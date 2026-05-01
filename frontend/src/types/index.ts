@@ -64,6 +64,8 @@ export interface DashboardSummary {
   expiredCharges: number
   totalReceivedAmount: number
   totalDivergentAmount: number
+  /** Soma monetária das conciliações problemáticas (pode ser maior que zero quando totalDivergentAmount é 0). */
+  totalReconciliationAttentionAmount?: number
   reconciliationIssues: {
     matched: number
     amountMismatch: number
@@ -90,6 +92,7 @@ export interface RecentReconciliation {
   paidAmount: number
   chargeReferenceId: string | null
   paymentEventId: string
+  provider: string | null
   createdAt: string
 }
 

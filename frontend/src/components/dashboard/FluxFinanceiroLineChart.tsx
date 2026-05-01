@@ -6,6 +6,7 @@ import {
 import { Info, ChevronDown } from 'lucide-react'
 import type { FluxPoint, DashboardSummary } from '../../types'
 import { formatCurrency } from '../../lib/formatters'
+import { effectiveDivergenceAmount } from '../../lib/dashboardSummary'
 
 function CustomTooltip({ active, payload, label }: {
   active?: boolean
@@ -36,7 +37,8 @@ export function FluxFinanceiroLineChart({ fluxSeries, summary }: {
 }) {
   const [period, setPeriod]   = useState('Por hora')
   const [open,   setOpen]     = useState(false)
-  const expectedTotal = Math.max(0, summary.totalReceivedAmount - summary.totalDivergentAmount)
+  const divTotal = effectiveDivergenceAmount(summary)
+  const expectedTotal = Math.max(0, summary.totalReceivedAmount - divTotal)
 
   return (
     <div className="flex flex-col h-full">
@@ -94,9 +96,9 @@ export function FluxFinanceiroLineChart({ fluxSeries, summary }: {
             <YAxis tick={{ fill: '#6B7280', fontSize: 10 }} axisLine={false} tickLine={false} width={55}
               tickFormatter={v => typeof v === 'number' ? (v >= 1000 ? `${v / 1000}k` : String(v)) : v} />
             <Tooltip content={<CustomTooltip />} />
-            <Line type="monotone" dataKey="received"  name="Recebido"   stroke="#22c55e" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="expected"  name="Esperado"   stroke="#3b82f6" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="divergent" name="Divergente" stroke="#ef4444" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Line type="natural" dataKey="received"  name="Recebido"   stroke="#22c55e" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Line type="natural" dataKey="expected"  name="Esperado"   stroke="#3b82f6" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Line type="natural" dataKey="divergent" name="Divergente" stroke="#ef4444" strokeWidth={2.5} dot={false} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -113,7 +115,7 @@ export function FluxFinanceiroLineChart({ fluxSeries, summary }: {
         </div>
         <div>
           <p className="text-xs text-gray-500 mb-0.5">Divergente</p>
-          <p className="text-sm font-bold text-red-400 tabular-nums">{formatCurrency(summary.totalDivergentAmount)}</p>
+          <p className="text-sm font-bold text-red-400 tabular-nums">{formatCurrency(divTotal)}</p>
         </div>
       </div>
     </div>

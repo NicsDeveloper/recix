@@ -82,26 +82,66 @@ public sealed class DashboardQueryService(
 
     private static DashboardSummaryDto BuildSummary(
         IReadOnlyList<Domain.Entities.Charge> ch,
-        IReadOnlyList<Domain.Entities.ReconciliationResult> rc) => new()
+        IReadOnlyList<Domain.Entities.ReconciliationResult> rc)
     {
-        TotalCharges          = ch.Count,
-        PaidCharges           = ch.Count(c => c.Status == ChargeStatus.Paid),
-        PendingCharges        = ch.Count(c => c.Status == ChargeStatus.Pending),
-        DivergentCharges      = ch.Count(c => c.Status == ChargeStatus.Divergent),
-        ExpiredCharges        = ch.Count(c => c.Status == ChargeStatus.Expired),
-        TotalReceivedAmount   = ch.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount),
-        TotalDivergentAmount  = ch.Where(c => c.Status == ChargeStatus.Divergent).Sum(c => c.Amount),
-        ReconciliationIssues  = new ReconciliationIssuesDto
+        var chargeDiv = ch.Where(c => c.Status == ChargeStatus.Divergent).Sum(c => c.Amount);
+        var reconAtt  = SumReconciliationAttentionAmount(rc);
+
+        return new DashboardSummaryDto
         {
-            Matched              = rc.Count(r => r.Status == ReconciliationStatus.Matched),
-            AmountMismatch       = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
-            DuplicatePayment     = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
-            PaymentWithoutCharge = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
-            ExpiredChargePaid    = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
-            InvalidReference     = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
-            ProcessingError      = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
-        },
-    };
+            TotalCharges          = ch.Count,
+            PaidCharges           = ch.Count(c => c.Status == ChargeStatus.Paid),
+            PendingCharges        = ch.Count(c => c.Status == ChargeStatus.Pending),
+            DivergentCharges      = ch.Count(c => c.Status == ChargeStatus.Divergent),
+            ExpiredCharges        = ch.Count(c => c.Status == ChargeStatus.Expired),
+            TotalReceivedAmount   = ch.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount),
+            TotalDivergentAmount  = chargeDiv,
+            TotalReconciliationAttentionAmount = reconAtt,
+            ReconciliationIssues  = new ReconciliationIssuesDto
+            {
+                Matched              = rc.Count(r => r.Status == ReconciliationStatus.Matched),
+                AmountMismatch       = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+                DuplicatePayment     = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
+                PaymentWithoutCharge = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
+                ExpiredChargePaid    = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
+                InvalidReference     = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
+                ProcessingError      = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Valores em risco / não alinhados segundo o resultado da conciliação (independente do status da cobrança).
+    /// </summary>
+    private static decimal SumReconciliationAttentionAmount(
+        IReadOnlyList<Domain.Entities.ReconciliationResult> rc)
+    {
+        decimal sum = 0;
+        foreach (var r in rc)
+        {
+            switch (r.Status)
+            {
+                case ReconciliationStatus.AmountMismatch:
+                    sum += r.ExpectedAmount is { } exp
+                        ? Math.Abs(r.PaidAmount - exp)
+                        : r.PaidAmount;
+                    break;
+                case ReconciliationStatus.PaymentWithoutCharge:
+                case ReconciliationStatus.DuplicatePayment:
+                case ReconciliationStatus.ExpiredChargePaid:
+                    sum += r.PaidAmount;
+                    break;
+                case ReconciliationStatus.InvalidReference:
+                case ReconciliationStatus.ProcessingError:
+                    sum += r.PaidAmount;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return sum;
+    }
 
     private static IReadOnlyList<FluxSeriesPointDto> BuildFluxSeries(
         IReadOnlyList<Domain.Entities.Charge> ch,
@@ -136,18 +176,53 @@ public sealed class DashboardQueryService(
         }).ToList();
     }
 
+    public async Task<PagedResult<RecentReconciliationDto>> GetReconciliationsListAsync(
+        ReconciliationStatus? status,
+        DateTime? fromDate,
+        DateTime? toDate,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var reconPage = await reconciliations.ListAsync(status, null, null, 1, int.MaxValue, ct);
+        var filtered = reconPage.Items.AsEnumerable();
+
+        if (fromDate.HasValue)
+            filtered = filtered.Where(r => r.CreatedAt.Date >= fromDate.Value.ToUniversalTime().Date);
+        if (toDate.HasValue)
+            filtered = filtered.Where(r => r.CreatedAt.Date <= toDate.Value.ToUniversalTime().Date);
+
+        var ordered = filtered.OrderByDescending(r => r.CreatedAt).ToList();
+        var total   = ordered.Count;
+        var slice   = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        var enriched = await EnrichReconciliationsAsync(slice, ct);
+        return new PagedResult<RecentReconciliationDto>
+        {
+            Items      = [.. enriched],
+            TotalCount = total,
+            Page       = page,
+            PageSize   = pageSize,
+        };
+    }
+
     private async Task<IReadOnlyList<RecentReconciliationDto>> MapRecentReconciliationsAsync(
         IReadOnlyList<Domain.Entities.ReconciliationResult> rc,
         CancellationToken ct)
     {
         var latest = rc.OrderByDescending(r => r.CreatedAt).Take(10).ToList();
-        if (latest.Count == 0) return [];
+        return latest.Count == 0 ? [] : await EnrichReconciliationsAsync(latest, ct);
+    }
 
-        var chargeCache   = new Dictionary<Guid, Domain.Entities.Charge>();
-        var paymentCache  = new Dictionary<Guid, Domain.Entities.PaymentEvent>();
-        var result        = new List<RecentReconciliationDto>(latest.Count);
+    private async Task<IReadOnlyList<RecentReconciliationDto>> EnrichReconciliationsAsync(
+        IReadOnlyList<Domain.Entities.ReconciliationResult> rc,
+        CancellationToken ct)
+    {
+        var chargeCache  = new Dictionary<Guid, Domain.Entities.Charge>();
+        var paymentCache = new Dictionary<Guid, Domain.Entities.PaymentEvent>();
+        var result       = new List<RecentReconciliationDto>(rc.Count);
 
-        foreach (var r in latest)
+        foreach (var r in rc)
         {
             string? chargeRef = null;
             if (r.ChargeId.HasValue)
@@ -168,14 +243,15 @@ public sealed class DashboardQueryService(
 
             result.Add(new RecentReconciliationDto
             {
-                Id               = r.Id,
-                Status           = r.Status.ToString(),
-                Reason           = r.Reason,
-                ExpectedAmount   = r.ExpectedAmount,
-                PaidAmount       = r.PaidAmount,
+                Id                = r.Id,
+                Status            = r.Status.ToString(),
+                Reason            = r.Reason,
+                ExpectedAmount    = r.ExpectedAmount,
+                PaidAmount        = r.PaidAmount,
                 ChargeReferenceId = chargeRef,
-                PaymentEventId   = pe?.EventId ?? r.PaymentEventId.ToString(),
-                CreatedAt        = r.CreatedAt,
+                PaymentEventId    = pe?.EventId ?? r.PaymentEventId.ToString(),
+                Provider          = pe?.Provider,
+                CreatedAt         = r.CreatedAt,
             });
         }
         return result;

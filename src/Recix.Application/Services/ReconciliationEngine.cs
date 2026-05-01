@@ -14,29 +14,19 @@ public sealed class ReconciliationEngine
 
     public async Task<ReconciliationOutcome> ReconcileAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken = default)
     {
-        // InvalidReference: neither identifier provided (domain-model.md §Regras de Conciliação)
-        if (string.IsNullOrWhiteSpace(paymentEvent.ExternalChargeId) &&
-            string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
-        {
-            var result = ReconciliationResult.Create(
-                paymentEvent.OrganizationId,
-                null, paymentEvent.Id,
-                ReconciliationStatus.InvalidReference,
-                "Payment event has neither ExternalChargeId nor ReferenceId.",
-                null, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, null);
-        }
-
         var charge = await FindChargeAsync(paymentEvent, cancellationToken);
 
         if (charge is null)
         {
+            var status = DetermineNoChargeStatus(paymentEvent);
+            var reason = status == ReconciliationStatus.InvalidReference
+                ? "Sem identificador de cobrança e sem cobranças pendentes com este valor para correspondência automática."
+                : "Nenhuma cobrança encontrada para este pagamento.";
+
             var result = ReconciliationResult.Create(
                 paymentEvent.OrganizationId,
                 null, paymentEvent.Id,
-                ReconciliationStatus.PaymentWithoutCharge,
-                "No charge found matching ExternalChargeId or ReferenceId.",
+                status, reason,
                 null, paymentEvent.PaidAmount);
 
             return new ReconciliationOutcome(result, null);
@@ -50,7 +40,7 @@ public sealed class ReconciliationEngine
             var result = ReconciliationResult.Create(
                 orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.DuplicatePayment,
-                $"Charge is already in status {charge.Status}. Duplicate payment ignored.",
+                $"Cobrança já está com status {charge.Status}. Pagamento duplicado ignorado.",
                 charge.Amount, paymentEvent.PaidAmount);
 
             return new ReconciliationOutcome(result, null);
@@ -63,7 +53,7 @@ public sealed class ReconciliationEngine
             var result = ReconciliationResult.Create(
                 orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.ExpiredChargePaid,
-                $"Charge expired at {charge.ExpiresAt:O}. Payment received after expiration.",
+                $"Cobrança expirou em {charge.ExpiresAt:O}. Pagamento recebido após o prazo.",
                 charge.Amount, paymentEvent.PaidAmount);
 
             return new ReconciliationOutcome(result, charge);
@@ -76,7 +66,7 @@ public sealed class ReconciliationEngine
             var result = ReconciliationResult.Create(
                 orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.AmountMismatch,
-                $"Paid amount {paymentEvent.PaidAmount:F2} differs from expected {charge.Amount:F2}.",
+                $"Valor pago {paymentEvent.PaidAmount:F2} diverge do esperado {charge.Amount:F2}.",
                 charge.Amount, paymentEvent.PaidAmount);
 
             return new ReconciliationOutcome(result, charge);
@@ -87,22 +77,57 @@ public sealed class ReconciliationEngine
         var matched = ReconciliationResult.Create(
             orgId, charge.Id, paymentEvent.Id,
             ReconciliationStatus.Matched,
-            "Payment matched successfully.",
+            "Pagamento conciliado com sucesso.",
             charge.Amount, paymentEvent.PaidAmount);
 
         return new ReconciliationOutcome(matched, charge);
     }
 
-    private async Task<Charge?> FindChargeAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken)
+    // ── Lookup ──────────────────────────────────────────────────────────────────
+
+    private async Task<Charge?> FindChargeAsync(PaymentEvent paymentEvent, CancellationToken ct)
     {
-        Charge? charge = null;
-
+        // 1. Exact match by ExternalChargeId
         if (!string.IsNullOrWhiteSpace(paymentEvent.ExternalChargeId))
-            charge = await _charges.GetByExternalIdAsync(paymentEvent.ExternalChargeId, cancellationToken);
+        {
+            var c = await _charges.GetByExternalIdAsync(paymentEvent.ExternalChargeId, ct);
+            if (c is not null) return c;
+        }
 
-        if (charge is null && !string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
-            charge = await _charges.GetByReferenceIdAsync(paymentEvent.ReferenceId, cancellationToken);
+        // 2. Exact match by ReferenceId
+        if (!string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
+        {
+            var c = await _charges.GetByReferenceIdAsync(paymentEvent.ReferenceId, ct);
+            if (c is not null) return c;
+        }
 
-        return charge;
+        // 3. Fuzzy match by amount (only when org is known and no identifier was provided)
+        //    Usada quando o extrato bancário (OFX/CSV) não carrega referência da venda.
+        //    Pega a cobrança pendente mais antiga com o mesmo valor (FIFO).
+        if (paymentEvent.OrganizationId != Guid.Empty)
+        {
+            var candidates = await _charges.FindPendingByAmountAsync(
+                paymentEvent.PaidAmount, paymentEvent.OrganizationId, ct);
+
+            if (candidates.Count > 0)
+                return candidates[0]; // FIFO: oldest pending charge with same amount
+        }
+
+        return null;
+    }
+
+    private static ReconciliationStatus DetermineNoChargeStatus(PaymentEvent paymentEvent)
+    {
+        // Se havia identificador mas não encontrou cobrança → PaymentWithoutCharge
+        if (!string.IsNullOrWhiteSpace(paymentEvent.ExternalChargeId) ||
+            !string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
+            return ReconciliationStatus.PaymentWithoutCharge;
+
+        // Sem identificador e sem org → não foi possível tentar fuzzy
+        if (paymentEvent.OrganizationId == Guid.Empty)
+            return ReconciliationStatus.InvalidReference;
+
+        // Tinha org, tentou fuzzy, não achou → pagamento sem cobrança correspondente
+        return ReconciliationStatus.PaymentWithoutCharge;
     }
 }

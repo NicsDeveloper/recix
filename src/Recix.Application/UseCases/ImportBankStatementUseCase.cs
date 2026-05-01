@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Recix.Application.DTOs;
 using Recix.Application.Services;
@@ -19,6 +20,16 @@ public sealed class ImportBankStatementUseCase(
     ReceivePixWebhookUseCase webhookUseCase,
     ILogger<ImportBankStatementUseCase> logger)
 {
+    /// <summary>
+    /// Cobranças geradas pelo Recix usam ReferenceId no formato RECIX-yyyyMMdd-nnnnnn.
+    /// Valores como RECIX-VENDA-… no extrato costumam estar em Charge.ExternalId — não devem ir para PaymentEvent.ReferenceId.
+    /// </summary>
+    private static readonly Regex RecixChargeReferenceIdPattern = new(
+        @"^RECIX-\d{8}-\d{6}$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static bool IsRecixChargeReferenceId(string value) =>
+        RecixChargeReferenceIdPattern.IsMatch(value.Trim());
     public async Task<ImportStatementResult> ExecuteFromOFXAsync(
         Stream ofxStream,
         CancellationToken ct = default)
@@ -189,8 +200,8 @@ public sealed class ImportBankStatementUseCase(
             string? externalChargeId = null;
             if (!string.IsNullOrWhiteSpace(referenceVal))
             {
-                if (referenceVal.StartsWith("RECIX-", StringComparison.OrdinalIgnoreCase))
-                    referenceId = referenceVal;
+                if (IsRecixChargeReferenceId(referenceVal))
+                    referenceId = referenceVal.Trim();
                 else
                     externalChargeId = referenceVal;
             }

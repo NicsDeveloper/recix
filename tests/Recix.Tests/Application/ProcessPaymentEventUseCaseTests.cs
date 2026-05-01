@@ -130,7 +130,7 @@ public sealed class ProcessPaymentEventUseCaseTests
 
         await BuildUseCase().ExecuteAsync(evt.Id);
 
-        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.InvalidReference);
+        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.PaymentWithoutCharge);
     }
 
     // --- Resiliência: evento não encontrado ---

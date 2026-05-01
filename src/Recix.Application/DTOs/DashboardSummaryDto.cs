@@ -8,7 +8,16 @@ public sealed class DashboardSummaryDto
     public int DivergentCharges { get; init; }
     public int ExpiredCharges { get; init; }
     public decimal TotalReceivedAmount { get; init; }
+
+    /// <summary>Soma das cobranças marcadas como divergentes no período.</summary>
     public decimal TotalDivergentAmount { get; init; }
+
+    /// <summary>
+    /// Exposição monetária a partir das conciliações problemáticas (valor divergente, pagamento sem cobrança, duplicado, etc.).
+    /// Pode ser &gt; 0 mesmo quando <see cref="TotalDivergentAmount"/> é zero.
+    /// </summary>
+    public decimal TotalReconciliationAttentionAmount { get; init; }
+
     public ReconciliationIssuesDto ReconciliationIssues { get; init; } = new();
 }
 

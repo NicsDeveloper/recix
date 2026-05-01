@@ -22,4 +22,11 @@ public interface IChargeRepository
 
     /// <summary>Retorna cobranças Pending cujo prazo já expirou.</summary>
     Task<List<Charge>> GetExpiredPendingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retorna cobranças Pending da organização com o valor exato indicado,
+    /// ordenadas por CreatedAt crescente (FIFO). Usado para matching por valor
+    /// quando o extrato bancário não carrega ReferenceId/ExternalChargeId.
+    /// </summary>
+    Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken cancellationToken = default);
 }

@@ -31,6 +31,8 @@ type NavItem =
       badge?: string
       end?: boolean
       adminOnly?: boolean
+      /** Dica longa ao passar o mouse (acessibilidade). */
+      title?: string
     }
   | { kind: 'placeholder'; label: string; icon: ComponentType<{ size?: number; className?: string }> }
 
@@ -43,7 +45,7 @@ const navItems: NavItem[] = [
     kind: 'link',
     label: 'Divergências',
     icon: AlertTriangle,
-    to: '/reconciliations?status=AmountMismatch',
+    to: '/reconciliations?filter=divergent',
   },
   {
     kind: 'link',
@@ -56,7 +58,13 @@ const navItems: NavItem[] = [
   { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
   { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
   { kind: 'link', label: 'Conexões',        icon: Plug,   to: '/connections' },
-  { kind: 'link', label: 'Importar Extrato', icon: Upload, to: '/import' },
+  {
+    kind: 'link',
+    label: 'Importar extratos',
+    icon: Upload,
+    to: '/import',
+    title: 'CSV de vendas e extrato bancário (CSV ou OFX) — dois envios na mesma página',
+  },
   { kind: 'link', label: 'Configurações', icon: Settings, to: '/settings' },
 ]
 
@@ -85,10 +93,7 @@ export function Sidebar() {
         </div>
         <div className="ml-3 min-w-0">
           <span className="text-sm font-bold text-gray-50 tracking-tight block leading-none">
-            RECIX
-          </span>
-          <span className="text-xs text-gray-500 font-medium uppercase tracking-wider block leading-none mt-1">
-            Engine
+            RECIX <span className="text-gray-500 font-semibold">ENGINE</span>
           </span>
         </div>
       </div>
@@ -112,15 +117,19 @@ export function Sidebar() {
           }
 
           const Icon = item.icon
+          const linkTitle = item.kind === 'link' ? item.title : undefined
           return (
             <NavLink
               key={item.to}
               to={item.to}
+              title={linkTitle}
               end={item.end ?? item.to === '/'}
               className={({ isActive }) => {
-                const requiresAmountMismatchQuery = item.to.includes('?status=AmountMismatch')
-                const hasAmountMismatchQuery = new URLSearchParams(location.search).get('status') === 'AmountMismatch'
-                const activeState = requiresAmountMismatchQuery ? isActive && hasAmountMismatchQuery : isActive && !hasAmountMismatchQuery
+                const isDivergenciasNav = item.to.includes('filter=divergent')
+                const hasDivergentFilter = new URLSearchParams(location.search).get('filter') === 'divergent'
+                const activeState = isDivergenciasNav
+                  ? isActive && hasDivergentFilter
+                  : isActive && !hasDivergentFilter
                 return [
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
                   activeState

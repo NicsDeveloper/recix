@@ -24,6 +24,14 @@ const statusOptions: { value: ReconciliationStatus; label: string }[] = [
   { value: 'ProcessingError', label: 'Erro de Proc.' },
 ]
 
+const DIVERGENT_VIEWS = '__divergent__' as const
+
+const reconciliationStatusSelectOptions: { value: ReconciliationStatus | typeof DIVERGENT_VIEWS | ''; label: string }[] = [
+  { value: DIVERGENT_VIEWS, label: 'Todas as divergências' },
+  { value: '', label: 'Todos os status' },
+  ...statusOptions,
+]
+
 const divergentStatuses: ReconciliationStatus[] = [
   'AmountMismatch',
   'DuplicatePayment',
@@ -125,24 +133,48 @@ function PriorityBadge({ score }: { score: number }) {
 
 export function ReconciliationsPage() {
   const [statusFilter, setStatusFilter] = useState<ReconciliationStatus | ''>('')
+  const [divergentOnly, setDivergentOnly] = useState(false)
   const [chargeIdFilter, setChargeIdFilter] = useState('')
   const [sortMode, setSortMode] = useState<'priority' | 'recent'>('priority')
   const [aiTarget, setAiTarget] = useState<{ id: string; status: ReconciliationStatus } | null>(null)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
+    if (searchParams.get('filter') === 'divergent') {
+      setDivergentOnly(true)
+      setStatusFilter('')
+      return
+    }
+    setDivergentOnly(false)
     const rawStatus = searchParams.get('status')
-    const next = (() => {
-      if (!rawStatus) return ''
-      const match = statusOptions.find((o) => o.value === rawStatus)
-      return match ? match.value : ''
-    })()
-
-    // Evita setState “síncrono” dentro do effect (regra react-hooks/set-state-in-effect).
-    setTimeout(() => {
-      setStatusFilter(next)
-    }, 0)
+    const match = rawStatus && statusOptions.find((o) => o.value === rawStatus)
+    setStatusFilter(match ? match.value : '')
   }, [searchParams])
+
+  const statusSelectValue = divergentOnly ? DIVERGENT_VIEWS : statusFilter
+
+  function onReconciliationStatusChange(v: string) {
+    if (v === DIVERGENT_VIEWS) {
+      setDivergentOnly(true)
+      setStatusFilter('')
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('filter', 'divergent')
+        next.delete('status')
+        return next
+      })
+      return
+    }
+    setDivergentOnly(false)
+    setStatusFilter(v as ReconciliationStatus | '')
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('filter')
+      if (v) next.set('status', v)
+      else next.delete('status')
+      return next
+    })
+  }
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['reconciliations', statusFilter, chargeIdFilter],
@@ -155,12 +187,15 @@ export function ReconciliationsPage() {
   })
 
   const sortedItems = useMemo(() => {
-    const items = [...(data?.items ?? [])]
+    let items = [...(data?.items ?? [])]
+    if (divergentOnly) {
+      items = items.filter((r) => isDivergent(r.status))
+    }
     if (sortMode === 'recent') {
       return items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }
     return items.sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
-  }, [data?.items, sortMode])
+  }, [data?.items, sortMode, divergentOnly])
 
   if (isError) {
     return <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
@@ -270,7 +305,13 @@ export function ReconciliationsPage() {
     <div>
       <Header
         title="Conciliações"
-        subtitle={data ? `${data.totalCount} resultado(s) no total` : undefined}
+        subtitle={
+          data
+            ? divergentOnly
+              ? `${sortedItems.length} divergência(s) · ${data.totalCount} conciliação(ões) carregada(s)`
+              : `${data.totalCount} resultado(s) no total`
+            : undefined
+        }
       />
 
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -291,11 +332,12 @@ export function ReconciliationsPage() {
       </div>
 
       <FilterBar>
-        <SelectFilter
+        <SelectFilter<string>
           label="Status"
-          value={statusFilter}
-          options={statusOptions}
-          onChange={setStatusFilter}
+          value={statusSelectValue}
+          options={reconciliationStatusSelectOptions}
+          onChange={onReconciliationStatusChange}
+          prependBlankOption={false}
         />
         <SearchInput
           placeholder="Filtrar por ChargeId..."
@@ -317,7 +359,11 @@ export function ReconciliationsPage() {
         columns={columns}
         data={sortedItems}
         isLoading={isLoading}
-        emptyMessage="Nenhuma conciliação registrada ainda."
+        emptyMessage={
+          divergentOnly
+            ? 'Nenhuma divergência nas conciliações carregadas. Tente “Todos os status” ou outro filtro.'
+            : 'Nenhuma conciliação registrada ainda.'
+        }
         emptyIcon={<GitMerge size={24} />}
         keyExtractor={(r) => r.id}
       />

@@ -46,4 +46,21 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
 
         return new PagedResult<ReconciliationResult> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
+
+    public async Task<IReadOnlyList<ReconciliationResult>> GetByStatusAndOrganizationAsync(
+        ReconciliationStatus status, Guid organizationId, CancellationToken ct = default) =>
+        await db.ReconciliationResults
+            .Where(r => r.OrganizationId == organizationId && r.Status == status)
+            .OrderBy(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await db.ReconciliationResults.FindAsync([id], ct);
+        if (entity is not null)
+        {
+            db.ReconciliationResults.Remove(entity);
+            await db.SaveChangesAsync(ct);
+        }
+    }
 }

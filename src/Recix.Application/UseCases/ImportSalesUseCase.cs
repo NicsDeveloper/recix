@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Recix.Application.DTOs;
 using Recix.Application.Interfaces;
 using Recix.Domain.Entities;
+using Recix.Domain.Enums;
 
 namespace Recix.Application.UseCases;
 
@@ -20,9 +21,12 @@ namespace Recix.Application.UseCases;
 ///   data         — data/hora da venda ISO ou dd/MM/yyyy HH:mm (default: agora)
 ///
 /// A cobrança criada expira em 48h a partir da data da venda (nunca no passado).
+/// Após importar, re-concilia payment events órfãos (PaymentWithoutCharge).
 /// </summary>
 public sealed class ImportSalesUseCase(
     IChargeRepository charges,
+    IReconciliationRepository reconciliations,
+    IPaymentEventRepository paymentEvents,
     ICurrentOrganization currentOrg,
     ILogger<ImportSalesUseCase> logger)
 {
@@ -153,7 +157,38 @@ public sealed class ImportSalesUseCase(
         logger.LogInformation("Import de vendas concluído: {Created} criadas, {Skipped} ignoradas, {Errors} erros",
             created, skipped, errors);
 
+        if (created > 0)
+            await RequeueOrphanPaymentEventsAsync(orgId, ct);
+
         return new ImportSalesResult { Created = created, Skipped = skipped, Errors = errors, Lines = results };
+    }
+
+    private async Task RequeueOrphanPaymentEventsAsync(Guid orgId, CancellationToken ct)
+    {
+        var orphans = await reconciliations.GetByStatusAndOrganizationAsync(
+            ReconciliationStatus.PaymentWithoutCharge, orgId, ct);
+
+        if (orphans.Count == 0) return;
+
+        logger.LogInformation("Re-conciliando {Count} payment event(s) órfão(s) após import de vendas.", orphans.Count);
+
+        foreach (var orphan in orphans)
+        {
+            try
+            {
+                var evt = await paymentEvents.GetByIdAsync(orphan.PaymentEventId, ct);
+                if (evt is null || evt.Status != PaymentEventStatus.Processed) continue;
+
+                await reconciliations.DeleteAsync(orphan.Id, ct);
+                evt.RequeueForReReconciliation();
+                await paymentEvents.UpdateAsync(evt, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Falha ao reenfileirar PaymentEvent {PaymentEventId} para re-conciliação.",
+                    orphan.PaymentEventId);
+            }
+        }
     }
 
     private async Task<string> GenerateReferenceIdAsync(CancellationToken ct)

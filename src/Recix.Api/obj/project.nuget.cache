@@ -5,9 +5,9 @@
   "projectFilePath": "C:\\Repos\\recix\\src\\Recix.Api\\Recix.Api.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\nicol\\.nuget\\packages\\bcrypt.net-next\\4.1.0\\bcrypt.net-next.4.1.0.nupkg.sha512",
-    "C:\\Users\\nicol\\.nuget\\packages\\google.apis\\1.73.0\\google.apis.1.73.0.nupkg.sha512",
-    "C:\\Users\\nicol\\.nuget\\packages\\google.apis.auth\\1.73.0\\google.apis.auth.1.73.0.nupkg.sha512",
-    "C:\\Users\\nicol\\.nuget\\packages\\google.apis.core\\1.73.0\\google.apis.core.1.73.0.nupkg.sha512",
+    "C:\\Users\\nicol\\.nuget\\packages\\google.apis\\1.74.0\\google.apis.1.74.0.nupkg.sha512",
+    "C:\\Users\\nicol\\.nuget\\packages\\google.apis.auth\\1.74.0\\google.apis.auth.1.74.0.nupkg.sha512",
+    "C:\\Users\\nicol\\.nuget\\packages\\google.apis.core\\1.74.0\\google.apis.core.1.74.0.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.aspnetcore.authentication.jwtbearer\\9.0.15\\microsoft.aspnetcore.authentication.jwtbearer.9.0.15.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.aspnetcore.openapi\\9.0.10\\microsoft.aspnetcore.openapi.9.0.10.nupkg.sha512",
     "C:\\Users\\nicol\\.nuget\\packages\\microsoft.entityframeworkcore\\9.0.15\\microsoft.entityframeworkcore.9.0.15.nupkg.sha512",

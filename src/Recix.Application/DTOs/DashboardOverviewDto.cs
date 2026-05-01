@@ -38,6 +38,7 @@ public sealed class RecentReconciliationDto
     public decimal PaidAmount { get; init; }
     public string? ChargeReferenceId { get; init; }
     public string PaymentEventId { get; init; } = default!;
+    public string? Provider { get; init; }
     public DateTime CreatedAt { get; init; }
 }
 

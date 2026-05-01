@@ -1,656 +1,572 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import {
-  Upload,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Copy,
-  FileText,
-  Shield,
+  Upload, CheckCircle, XCircle, Copy,
+  FileText, ChevronRight, ArrowRight,
+  ShoppingCart, Building2, GitMerge, Info, Download,
   HelpCircle,
-  ChevronRight,
-  ArrowRight,
-  Lightbulb,
 } from 'lucide-react'
 import { Header } from '../components/layout/Header'
 import type { ImportStatementResult, ImportSalesResult } from '../types'
 import { importService } from '../services/importService'
 
-// ─── Local history (localStorage) ────────────────────────────────────────────
+// ─── How it works ─────────────────────────────────────────────────────────────
 
-interface ImportRecord {
-  id: string
-  filename: string
-  period: string
-  bank: string
-  bankColor: string
-  registros: number
-  status: 'Concluído' | 'Erro'
-  date: string
-}
-
-const HISTORY_KEY = 'recix_import_history'
-
-function loadHistory(): ImportRecord[] {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') } catch { return [] }
-}
-
-function saveHistory(records: ImportRecord[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(records.slice(0, 10)))
-}
-
-function detectBank(filename: string): { bank: string; color: string } {
-  const f = filename.toLowerCase()
-  if (f.includes('itau') || f.includes('itaú'))      return { bank: 'Itaú',       color: '#f97316' }
-  if (f.includes('bradesco'))                         return { bank: 'Bradesco',   color: '#ef4444' }
-  if (f.includes('nubank'))                           return { bank: 'Nubank',     color: '#7c3aed' }
-  if (f.includes('santander'))                        return { bank: 'Santander',  color: '#dc2626' }
-  if (f.includes('inter'))                            return { bank: 'Inter',      color: '#f97316' }
-  if (f.includes('caixa'))                            return { bank: 'Caixa',      color: '#2563eb' }
-  if (f.includes('bb') || f.includes('bancodobrasil')) return { bank: 'BB',        color: '#eab308' }
-  if (f.includes('sicoob'))                           return { bank: 'Sicoob',     color: '#16a34a' }
-  return { bank: 'Banco', color: '#6b7280' }
-}
-
-// ─── Step indicator ───────────────────────────────────────────────────────────
-
-const STEPS = [
-  { label: 'Selecionar arquivo',    sub: 'Escolha o arquivo do extrato' },
-  { label: 'Validar dados',         sub: 'Verificamos o formato do arquivo' },
-  { label: 'Configurar importação', sub: 'Mapeie as colunas (se necessário)' },
-  { label: 'Importar e conciliar',  sub: 'Inicie a conciliação automática' },
-]
-
-function StepIndicator({ current }: { current: number }) {
+function HowItWorks() {
   return (
-    <div className="flex items-start gap-0 mb-6">
-      {STEPS.map((step, i) => {
-        const n       = i + 1
-        const done    = n < current
-        const active  = n === current
-        const last    = i === STEPS.length - 1
-
-        return (
-          <div key={n} className="flex items-start flex-1 min-w-0">
-            <div className="flex flex-col items-center flex-shrink-0">
-              <div className={[
-                'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all',
-                done   ? 'bg-indigo-600 text-white'         :
-                active ? 'bg-indigo-600 text-white ring-4 ring-indigo-500/20' :
-                         'bg-gray-800 text-gray-500 border border-gray-700',
-              ].join(' ')}>
-                {done ? <CheckCircle size={16} /> : n}
+    <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-5 mb-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Info size={14} className="text-indigo-400" />
+        <h2 className="text-sm font-semibold text-gray-200">Como funciona a conciliação</h2>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          {
+            step: '1',
+            icon: <ShoppingCart size={20} className="text-indigo-400" />,
+            bg: 'bg-indigo-500/10',
+            title: 'Importe suas vendas',
+            body: 'CSV com valor e descrição de cada venda. Cria as cobranças que o sistema espera receber.',
+            tip: 'CSV com suas vendas do período.',
+            tipColor: 'text-indigo-400',
+          },
+          {
+            step: '2',
+            icon: <Building2 size={20} className="text-sky-400" />,
+            bg: 'bg-sky-500/10',
+            title: 'Importe o extrato bancário',
+            body: 'OFX do seu banco ou CSV com as transações. O Recix lê cada entrada e tenta casar com uma venda.',
+            tip: 'OFX do banco ou CSV de transações.',
+            tipColor: 'text-sky-400',
+          },
+          {
+            step: '3',
+            icon: <GitMerge size={20} className="text-green-400" />,
+            bg: 'bg-green-500/10',
+            title: 'Veja a conciliação',
+            body: 'O Recix cruza automaticamente: mesmo valor? Conciliado. Valor diferente? Divergência detectada.',
+            tip: 'Acesse Conciliações.',
+            tipColor: 'text-green-400',
+          },
+        ].map((s, i) => (
+          <div key={s.step} className="flex gap-3">
+            <div className="flex flex-col items-center gap-1 flex-shrink-0">
+              <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center`}>
+                {s.icon}
               </div>
-              <div className="mt-2 text-center px-1">
-                <p className={`text-xs font-semibold leading-tight ${active ? 'text-indigo-400' : done ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {step.label}
-                </p>
-                <p className="text-[10px] text-gray-600 leading-tight mt-0.5 hidden sm:block">{step.sub}</p>
-              </div>
+              {i < 2 && (
+                <div className="hidden sm:flex flex-col items-center gap-1 py-1">
+                  <div className="w-px h-4 bg-gray-700" />
+                </div>
+              )}
             </div>
-            {!last && (
-              <div className={`flex-1 h-px mt-4 mx-1 ${n < current ? 'bg-indigo-600' : 'bg-gray-800'}`} />
-            )}
+            <div className="pt-1.5">
+              <p className="text-xs font-bold text-gray-200">{s.title}</p>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">{s.body}</p>
+              <p className={`text-[11px] font-semibold mt-1.5 ${s.tipColor}`}>{s.tip}</p>
+            </div>
           </div>
-        )
-      })}
+        ))}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
+        <Info size={12} />
+        <span>Importe vendas e extrato em <strong>qualquer ordem</strong>. O Recix re-concilia automaticamente quando ambos estão disponíveis.</span>
+      </div>
     </div>
   )
 }
 
-// ─── Bank buttons ─────────────────────────────────────────────────────────────
+// ─── Drop zone ─────────────────────────────────────────────────────────────────
 
-const BANKS = [
-  { name: 'Itaú',          color: '#f97316', hint: 'App Itaú → Minha Conta → Extrato → Exportar OFX' },
-  { name: 'Bradesco',      color: '#ef4444', hint: 'Internet Banking → Extrato → Download OFX' },
-  { name: 'Nubank',        color: '#7c3aed', hint: 'App Nubank → Perfil → Exportar extrato (OFX)' },
-  { name: 'Santander',     color: '#dc2626', hint: 'Internet Banking → Extrato → Exportar OFX' },
-  { name: 'Outros bancos', color: '#6b7280', hint: 'Acesse seu internet banking e exporte o extrato no formato OFX ou CSV' },
-]
+function DropZone({ accept, file, onFile }: {
+  accept: string
+  file: File | null
+  onFile: (f: File) => void
+}) {
+  const ref  = useRef<HTMLInputElement>(null)
+  const [drag, setDrag] = useState(false)
 
-function BankButton({ bank }: { bank: typeof BANKS[number] }) {
-  const [show, setShow] = useState(false)
+  function handleFile(f: File) {
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!accept.split(',').some(a => a.trim().replace('.', '') === ext)) {
+      alert(`Formatos aceitos: ${accept}`)
+      return
+    }
+    onFile(f)
+  }
+
   return (
-    <div className="relative">
-      <button
-        onClick={() => setShow(v => !v)}
-        onBlur={() => setTimeout(() => setShow(false), 150)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800/60 hover:bg-gray-800 hover:border-gray-600 transition-all text-xs text-gray-300 font-medium"
-      >
-        <span
-          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-          style={{ backgroundColor: bank.color }}
-        />
-        {bank.name}
-      </button>
-      {show && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl bg-gray-800 border border-gray-700 p-3 text-xs text-gray-300 shadow-2xl z-50">
-          <p className="font-semibold text-gray-100 mb-1">Como exportar</p>
-          <p className="text-gray-400 leading-relaxed">{bank.hint}</p>
-          <div className="absolute bottom-[-5px] left-4 w-2.5 h-2.5 bg-gray-800 border-r border-b border-gray-700 rotate-45" />
+    <div
+      onDragOver={e => { e.preventDefault(); setDrag(true) }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+      onClick={() => !file && ref.current?.click()}
+      className={[
+        'rounded-xl border-2 border-dashed p-8 text-center transition-all',
+        drag        ? 'border-indigo-500 bg-indigo-500/5 cursor-copy'   :
+        file        ? 'border-green-500/40 bg-green-500/5 cursor-default' :
+                      'border-gray-700 hover:border-indigo-500/50 hover:bg-indigo-500/5 cursor-pointer',
+      ].join(' ')}
+    >
+      <input ref={ref} type="file" accept={accept} className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+
+      {file ? (
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-12 h-12 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+            <FileText size={22} className="text-green-400" />
+          </div>
+          <p className="text-sm font-semibold text-green-400">{file.name}</p>
+          <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
+          <button
+            onClick={e => { e.stopPropagation(); ref.current?.click() }}
+            className="text-xs text-gray-600 hover:text-gray-400 underline mt-1"
+          >
+            Trocar arquivo
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-12 h-12 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center">
+            <Upload size={22} className="text-gray-500" />
+          </div>
+          <p className="text-sm text-gray-300">Arraste o arquivo aqui ou clique para selecionar</p>
+          <p className="text-xs text-gray-600">{accept.toUpperCase().replace(/\./g, '').replace(/,/g, ', ')}</p>
+          <button
+            onClick={e => { e.stopPropagation(); ref.current?.click() }}
+            className="mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
+          >
+            Selecionar arquivo
+          </button>
         </div>
       )}
     </div>
   )
 }
 
-// ─── Info panel ───────────────────────────────────────────────────────────────
+// ─── Column guide card ─────────────────────────────────────────────────────────
 
-function InfoPanel() {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-        <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider mb-4">
-          Informações importantes
-        </h3>
-        <div className="space-y-4">
-          {[
-            {
-              Icon: Shield,
-              title: 'Seus dados estão seguros',
-              body: 'Seus arquivos são processados com segurança e não são armazenados após a conciliação.',
-              color: 'text-blue-400',
-              bg: 'bg-blue-500/10',
-            },
-            {
-              Icon: FileText,
-              title: 'Formatos suportados',
-              body: 'OFX (recomendado) ou CSV exportado do internet banking. Arquivos de até 10 MB.',
-              color: 'text-indigo-400',
-              bg: 'bg-indigo-500/10',
-            },
-            {
-              Icon: CheckCircle,
-              title: 'O que é conciliado?',
-              body: 'Compararemos os recebimentos do extrato com suas vendas para identificar divergências.',
-              color: 'text-green-400',
-              bg: 'bg-green-500/10',
-            },
-          ].map(({ Icon, title, body, color, bg }) => (
-            <div key={title} className="flex gap-3">
-              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                <Icon size={15} className={color} />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-gray-200">{title}</p>
-                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-        <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Lightbulb size={13} className="text-amber-400" />
-          Dicas para melhor resultado
-        </h3>
-        <ul className="space-y-2">
-          {[
-            'Exportar o período completo que deseja conciliar',
-            'Usar o formato OFX quando disponível',
-            'Verificar se todas as movimentações estão incluídas',
-          ].map(tip => (
-            <li key={tip} className="flex items-start gap-2 text-xs text-gray-400">
-              <CheckCircle size={13} className="text-green-500 flex-shrink-0 mt-0.5" />
-              {tip}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <button className="w-full rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center gap-3 hover:bg-gray-800/60 hover:border-gray-700 transition-all group">
-        <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
-          <HelpCircle size={15} className="text-gray-400" />
-        </div>
-        <div className="flex-1 text-left">
-          <p className="text-xs font-semibold text-gray-200">Precisa de ajuda?</p>
-          <p className="text-xs text-gray-500">Fale com nosso suporte</p>
-        </div>
-        <ChevronRight size={15} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
-      </button>
-    </div>
-  )
-}
-
-// ─── Result table ─────────────────────────────────────────────────────────────
-
-function ResultTable({ data }: { data: ImportStatementResult }) {
-  const statusIcon = {
-    Imported:  <CheckCircle size={13} className="text-green-400 flex-shrink-0" />,
-    Duplicate: <Copy        size={13} className="text-amber-400 flex-shrink-0" />,
-    Error:     <XCircle     size={13} className="text-red-400   flex-shrink-0" />,
-  } as const
-  const statusLabel = { Imported: 'Importado', Duplicate: 'Duplicado', Error: 'Erro' } as const
+function ColGuide({ cols, template, filename }: {
+  cols: { name: string; required: boolean; example: string }[]
+  template: string
+  filename: string
+}) {
+  function download() {
+    const blob   = new Blob([template], { type: 'text/csv;charset=utf-8' })
+    const url    = URL.createObjectURL(blob)
+    const a      = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden mt-5">
-      <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">
-          Detalhes por transação
-        </h2>
-        <span className="text-xs text-gray-500">{data.lines.length} transações</span>
-      </div>
-      <div className="overflow-x-auto max-h-64 overflow-y-auto">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-gray-900">
-            <tr className="border-b border-gray-800 text-gray-500">
-              <th className="px-4 py-2.5 text-left w-12">#</th>
-              <th className="px-4 py-2.5 text-left">EventId / FITID</th>
-              <th className="px-4 py-2.5 text-left w-28">Status</th>
-              <th className="px-4 py-2.5 text-left">Detalhe</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.lines.map((line) => (
-              <tr key={`${line.line}-${line.eventId}`} className="border-b border-gray-800/40 hover:bg-gray-800/30">
-                <td className="px-4 py-2 text-gray-600 font-mono">{line.line}</td>
-                <td className="px-4 py-2 font-mono text-gray-400 truncate max-w-[200px]" title={line.eventId}>
-                  {line.eventId || '—'}
-                </td>
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-1.5">
-                    {statusIcon[line.status as keyof typeof statusIcon] ?? <AlertTriangle size={13} className="text-gray-500" />}
-                    <span className={{
-                      Imported: 'text-green-400',
-                      Duplicate: 'text-amber-400',
-                      Error: 'text-red-400',
-                    }[line.status] ?? 'text-gray-400'}>
-                      {statusLabel[line.status as keyof typeof statusLabel] ?? line.status}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-2 text-gray-600 italic">{line.error ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-// ─── Sales result table ───────────────────────────────────────────────────────
-
-function SalesResultTable({ data }: { data: ImportSalesResult }) {
-  return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden mt-5">
-      <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">Cobranças criadas</h2>
-        <span className="text-xs text-gray-500">{data.lines.length} vendas processadas</span>
-      </div>
-      <div className="overflow-x-auto max-h-64 overflow-y-auto">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-gray-900">
-            <tr className="border-b border-gray-800 text-gray-500">
-              <th className="px-4 py-2.5 text-left w-12">#</th>
-              <th className="px-4 py-2.5 text-left">Descrição</th>
-              <th className="px-4 py-2.5 text-right w-28">Valor</th>
-              <th className="px-4 py-2.5 text-left w-28">Status</th>
-              <th className="px-4 py-2.5 text-left">ReferenceId / Erro</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.lines.map((line) => (
-              <tr key={line.line} className="border-b border-gray-800/40 hover:bg-gray-800/30">
-                <td className="px-4 py-2 text-gray-600 font-mono">{line.line}</td>
-                <td className="px-4 py-2 text-gray-300 truncate max-w-[180px]">{line.description || '—'}</td>
-                <td className="px-4 py-2 text-right font-mono text-gray-300">
-                  {line.amount > 0 ? `R$ ${line.amount.toFixed(2).replace('.', ',')}` : '—'}
-                </td>
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-1.5">
-                    {line.status === 'Created'
-                      ? <CheckCircle size={13} className="text-green-400" />
-                      : line.status === 'Error'
-                        ? <XCircle size={13} className="text-red-400" />
-                        : <Copy size={13} className="text-amber-400" />}
-                    <span className={{ Created: 'text-green-400', Error: 'text-red-400', Skipped: 'text-amber-400' }[line.status] ?? 'text-gray-400'}>
-                      {line.status === 'Created' ? 'Criada' : line.status === 'Skipped' ? 'Ignorada' : 'Erro'}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-2 font-mono text-gray-500">{line.error ?? line.referenceId ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-// ─── Recent imports ───────────────────────────────────────────────────────────
-
-function RecentImports({ history }: { history: ImportRecord[] }) {
-  if (history.length === 0) return null
-  return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-gray-800">
-        <h2 className="text-sm font-semibold text-gray-200">Importações recentes</h2>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-gray-800 text-gray-500">
-              <th className="px-5 py-2.5 text-left">Arquivo</th>
-              <th className="px-4 py-2.5 text-left">Período</th>
-              <th className="px-4 py-2.5 text-left">Banco</th>
-              <th className="px-4 py-2.5 text-left">Registros</th>
-              <th className="px-4 py-2.5 text-left">Status</th>
-              <th className="px-4 py-2.5 text-left">Data</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map(rec => (
-              <tr key={rec.id} className="border-b border-gray-800/40 hover:bg-gray-800/30">
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <FileText size={13} className="text-gray-500 flex-shrink-0" />
-                    <span className="font-mono text-gray-300 truncate max-w-[180px]" title={rec.filename}>
-                      {rec.filename}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-gray-500">{rec.period || '—'}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: rec.bankColor }} />
-                    <span className="text-gray-300">{rec.bank}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 font-mono text-gray-300">
-                  {rec.registros.toLocaleString('pt-BR')}
-                </td>
-                <td className="px-4 py-3">
-                  {rec.status === 'Concluído'
-                    ? <span className="flex items-center gap-1.5 text-green-400"><CheckCircle size={13} /> Concluído</span>
-                    : <span className="flex items-center gap-1.5 text-red-400"><XCircle size={13} /> Erro</span>}
-                </td>
-                <td className="px-4 py-3 text-gray-500">
-                  {new Date(rec.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="px-5 py-3 border-t border-gray-800">
-        <button className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-          Ver todas as importações <ArrowRight size={13} />
+    <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-gray-300">Colunas do arquivo</h3>
+        <button
+          onClick={download}
+          className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        >
+          <Download size={12} /> Baixar modelo
         </button>
       </div>
+      <div className="flex flex-wrap gap-2">
+        {cols.map(c => (
+          <div key={c.name} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-800 border border-gray-700">
+            <code className="text-xs text-indigo-300">{c.name.split('/')[0]}</code>
+            {c.required
+              ? <span className="text-[10px] text-red-400 font-bold">*</span>
+              : <span className="text-[10px] text-gray-600">opcional</span>}
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-gray-600 mt-2.5">Ex: <code className="text-gray-500">{cols.map(c => c.example).join(', ')}</code></p>
     </div>
   )
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Result summary ────────────────────────────────────────────────────────────
 
-type Mode = 'statement' | 'sales'
+function StatementResultSummary({ data }: { data: ImportStatementResult }) {
+  const ok = data.imported > 0 && data.errors === 0
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-3 text-center">
+          <p className="text-2xl font-black text-green-400">{data.imported}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Importadas</p>
+        </div>
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center">
+          <p className="text-2xl font-black text-amber-400">{data.duplicates}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Duplicadas</p>
+        </div>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-center">
+          <p className="text-2xl font-black text-red-400">{data.errors}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Erros</p>
+        </div>
+      </div>
+
+      {ok && (
+        <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 flex items-start gap-3">
+          <CheckCircle size={16} className="text-green-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-green-300">
+              {data.imported} transação{data.imported !== 1 ? 'ões' : ''} importada{data.imported !== 1 ? 's' : ''}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              O Recix está processando a conciliação. Os resultados aparecem em alguns segundos.
+            </p>
+          </div>
+          <Link
+            to="/reconciliations"
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs font-semibold transition-colors whitespace-nowrap"
+          >
+            Ver conciliações <ArrowRight size={12} />
+          </Link>
+        </div>
+      )}
+
+      {data.lines.length > 0 && (
+        <details className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+          <summary className="px-4 py-3 text-xs font-semibold text-gray-400 cursor-pointer hover:text-gray-200 transition-colors flex items-center justify-between">
+            <span>Detalhes linha a linha ({data.lines.length})</span>
+            <ChevronRight size={13} className="transition-transform [[open]_&]:rotate-90" />
+          </summary>
+          <div className="overflow-x-auto max-h-56 overflow-y-auto border-t border-gray-800">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-900 sticky top-0">
+                <tr className="border-b border-gray-800 text-gray-500">
+                  <th className="px-4 py-2 text-left w-10">#</th>
+                  <th className="px-4 py-2 text-left">ID</th>
+                  <th className="px-4 py-2 text-left w-24">Status</th>
+                  <th className="px-4 py-2 text-left">Detalhe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.lines.map(l => (
+                  <tr key={l.line} className="border-b border-gray-800/40 hover:bg-gray-800/30">
+                    <td className="px-4 py-2 text-gray-600 font-mono">{l.line}</td>
+                    <td className="px-4 py-2 font-mono text-gray-400 truncate max-w-[160px]" title={l.eventId}>{l.eventId || '—'}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-1.5">
+                        {l.status === 'Imported'  && <CheckCircle size={12} className="text-green-400" />}
+                        {l.status === 'Duplicate' && <Copy        size={12} className="text-amber-400" />}
+                        {l.status === 'Error'     && <XCircle     size={12} className="text-red-400"   />}
+                        <span className={{ Imported: 'text-green-400', Duplicate: 'text-amber-400', Error: 'text-red-400' }[l.status] ?? 'text-gray-400'}>
+                          {l.status === 'Imported' ? 'Importada' : l.status === 'Duplicate' ? 'Duplicada' : 'Erro'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 italic">{l.error ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function SalesResultSummary({ data, onContinue }: { data: ImportSalesResult; onContinue: () => void }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-3 text-center">
+          <p className="text-2xl font-black text-green-400">{data.created}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Cobranças criadas</p>
+        </div>
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center">
+          <p className="text-2xl font-black text-amber-400">{data.skipped}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Ignoradas</p>
+        </div>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-center">
+          <p className="text-2xl font-black text-red-400">{data.errors}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Erros</p>
+        </div>
+      </div>
+
+      {data.created > 0 && (
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 flex items-start gap-3">
+          <CheckCircle size={16} className="text-indigo-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-indigo-300">
+              {data.created} venda{data.created !== 1 ? 's' : ''} registrada{data.created !== 1 ? 's' : ''} com sucesso
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Agora importe o extrato do seu banco para o Recix cruzar automaticamente.
+            </p>
+          </div>
+          <button
+            onClick={onContinue}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+          >
+            Ir para extrato <ArrowRight size={12} />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Bank format tips ──────────────────────────────────────────────────────────
+
+const BANKS = [
+  { name: 'Itaú',     hint: 'App → Minha Conta → Extrato → Exportar OFX',        color: '#f97316' },
+  { name: 'Bradesco', hint: 'Internet Banking → Extrato → Exportar OFX',          color: '#ef4444' },
+  { name: 'Nubank',   hint: 'App → Perfil → Exportar extrato (OFX)',              color: '#7c3aed' },
+  { name: 'Santander',hint: 'Internet Banking → Extrato → Exportar OFX',          color: '#dc2626' },
+  { name: 'BB',       hint: 'App/Internet Banking → Extrato → Exportar OFX/CSV',  color: '#eab308' },
+  { name: 'Outros',   hint: 'Acesse seu internet banking e exporte o extrato OFX', color: '#6b7280' },
+]
+
+function BankTips() {
+  const [active, setActive] = useState<string | null>(null)
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-2 flex items-center gap-1.5">
+        <HelpCircle size={12} /> Como exportar o OFX do seu banco
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {BANKS.map(b => (
+          <button
+            key={b.name}
+            onClick={() => setActive(active === b.name ? null : b.name)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${active === b.name ? 'border-gray-600 bg-gray-800 text-gray-200' : 'border-gray-800 bg-gray-900/60 text-gray-400 hover:border-gray-700 hover:text-gray-300'}`}
+          >
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: b.color }} />
+            {b.name}
+          </button>
+        ))}
+      </div>
+      {active && (
+        <div className="mt-2 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-300">
+          <strong className="text-gray-200">{active}:</strong> {BANKS.find(b => b.name === active)?.hint}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+type Tab = 'sales' | 'statement'
+
+const SALES_TEMPLATE = `valor,descricao,data
+350.00,Amortecedor dianteiro,2026-05-01 09:30
+120.00,Filtro de óleo,2026-05-01 10:15
+89.90,Pastilha de freio,2026-05-01 14:00`
+
+const STATEMENT_TEMPLATE = `eventId,paidAmount,paidAt,referenceId,externalChargeId,provider
+evt_abc123,350.00,2026-05-01T09:35:00Z,,TX001,Banco
+evt_def456,120.00,2026-05-01T10:20:00Z,,TX002,Banco`
 
 export function ImportPage() {
-  const fileRef  = useRef<HTMLInputElement>(null)
-  const salesRef = useRef<HTMLInputElement>(null)
-
-  const [mode, setMode]         = useState<Mode>('statement')
-  const [step, setStep]         = useState(1)
-  const [file, setFile]         = useState<File | null>(null)
-  const [drag, setDrag]         = useState(false)
-  const [history, setHistory]   = useState<ImportRecord[]>(loadHistory)
-
-  const statementMutation = useMutation<ImportStatementResult, Error, File>({
-    mutationFn: importService.uploadStatement,
-    onSuccess: (data, f) => {
-      setStep(4)
-      const { bank, color } = detectBank(f.name)
-      const rec: ImportRecord = {
-        id:         crypto.randomUUID(),
-        filename:   f.name,
-        period:     '',
-        bank,
-        bankColor:  color,
-        registros:  data.imported + data.duplicates,
-        status:     data.errors > 0 && data.imported === 0 ? 'Erro' : 'Concluído',
-        date:       new Date().toISOString(),
-      }
-      const next = [rec, ...history]
-      setHistory(next)
-      saveHistory(next)
-    },
-  })
+  const [tab, setTab]       = useState<Tab>('sales')
+  const [salesFile,    setSalesFile]    = useState<File | null>(null)
+  const [statementFile, setStatementFile] = useState<File | null>(null)
+  const [salesDone,    setSalesDone]    = useState(false)
 
   const salesMutation = useMutation<ImportSalesResult, Error, File>({
     mutationFn: importService.uploadSales,
-    onSuccess: () => setStep(4),
+    onSuccess: () => setSalesDone(true),
+  })
+  const stmtMutation = useMutation<ImportStatementResult, Error, File>({
+    mutationFn: importService.uploadStatement,
   })
 
-  const selectFile = useCallback((f: File) => {
-    const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
-    if (mode === 'statement' && !['csv', 'ofx', 'ofc'].includes(ext)) {
-      alert('Formatos aceitos: .ofx, .csv')
-      return
-    }
-    if (mode === 'sales' && ext !== 'csv') {
-      alert('Formato aceito: .csv')
-      return
-    }
-    setFile(f)
-    statementMutation.reset()
-    salesMutation.reset()
-    setStep(f ? 3 : 1)
-  }, [mode, statementMutation, salesMutation])
+  function resetSales()     { setSalesFile(null);     salesMutation.reset() }
+  function resetStatement() { setStatementFile(null); stmtMutation.reset()  }
 
-  function switchMode(m: Mode) {
-    setMode(m)
-    setFile(null)
-    setStep(1)
-    statementMutation.reset()
-    salesMutation.reset()
-  }
-
-  function runImport() {
-    if (!file) return
-    setStep(4)
-    if (mode === 'statement') statementMutation.mutate(file)
-    else salesMutation.mutate(file)
-  }
-
-  const isPending = statementMutation.isPending || salesMutation.isPending
-  const stmtData  = statementMutation.data
-  const salesData = salesMutation.data
-  const err       = statementMutation.error ?? salesMutation.error
-
-  useEffect(() => { if (!file) setStep(1) }, [file])
+  const stmtResult  = stmtMutation.data
+  const salesResult = salesMutation.data
 
   return (
     <div>
       <Header
-        title="Importar Extrato"
-        subtitle="Importe seu extrato bancário para conciliar automaticamente com suas vendas"
+        title="Importar Dados"
+        subtitle="Importe suas vendas e o extrato bancário para conciliar automaticamente"
       />
 
-      {/* Mode toggle */}
-      <div className="flex items-center gap-2 mb-6">
-        <button
-          onClick={() => switchMode('statement')}
-          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            mode === 'statement'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-gray-800 text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          Extrato Bancário
-        </button>
-        <button
-          onClick={() => switchMode('sales')}
-          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            mode === 'sales'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-gray-800 text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          Importar Vendas
-        </button>
-      </div>
+      <HowItWorks />
 
-      {/* Step indicator */}
-      <StepIndicator current={step} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 mb-6">
-        {/* ── Left column ── */}
-        <div className="space-y-5">
-          {/* Upload zone */}
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={(e) => {
-              e.preventDefault(); setDrag(false)
-              const f = e.dataTransfer.files[0]
-              if (f) selectFile(f)
-            }}
-            onClick={() => !file && (mode === 'statement' ? fileRef : salesRef).current?.click()}
+      {/* Tab selector */}
+      <div className="flex gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl mb-6 w-fit">
+        {([
+          { id: 'sales',     label: 'Vendas',           done: salesDone },
+          { id: 'statement', label: 'Extrato bancário',  done: !!stmtMutation.data },
+        ] as const).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
             className={[
-              'rounded-xl border-2 border-dashed p-10 text-center transition-all',
-              !file ? 'cursor-pointer' : '',
-              drag
-                ? 'border-indigo-500 bg-indigo-500/5'
-                : file
-                  ? 'border-green-500/40 bg-green-500/5 cursor-default'
-                  : 'border-indigo-500/40 bg-indigo-500/5 hover:border-indigo-500/70 hover:bg-indigo-500/8',
+              'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+              tab === t.id
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-gray-400 hover:text-gray-200',
             ].join(' ')}
           >
-            <input ref={fileRef}  type="file" accept=".ofx,.ofc,.csv" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) selectFile(f) }} />
-            <input ref={salesRef} type="file" accept=".csv"           className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) selectFile(f) }} />
-
-            {file ? (
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
-                  <FileText size={24} className="text-green-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-green-400">{file.name}</p>
-                  <p className="text-xs text-gray-500 mt-1">{(file.size / 1024).toFixed(1)} KB · pronto para importar</p>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setFile(null); setStep(1) }}
-                  className="text-xs text-gray-600 hover:text-gray-400 underline"
-                >
-                  Trocar arquivo
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                  <Upload size={24} className="text-indigo-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-200">Selecione ou arraste seu arquivo</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {mode === 'statement' ? 'Formatos aceitos: OFX, CSV' : 'Formato aceito: CSV'} · Tamanho máximo: 10 MB
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); (mode === 'statement' ? fileRef : salesRef).current?.click() }}
-                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors"
-                >
-                  <Upload size={15} />
-                  Selecionar arquivo
-                </button>
-                <p className="text-xs text-gray-600">ou arraste e solte aqui</p>
-              </div>
-            )}
-          </div>
-
-          {/* Import button */}
-          {file && !stmtData && !salesData && (
-            <button
-              onClick={runImport}
-              disabled={isPending}
-              className="w-full flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Upload size={16} />
-              {isPending ? 'Importando e conciliando...' : 'Importar e conciliar'}
-            </button>
-          )}
-
-          {/* Error */}
-          {err && (
-            <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4 flex items-start gap-3">
-              <XCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-400">{err.message}</p>
-            </div>
-          )}
-
-          {/* Summary cards */}
-          {(stmtData || salesData) && (
-            <div className={`grid gap-4 ${stmtData ? 'grid-cols-3' : 'grid-cols-3'}`}>
-              {stmtData && <>
-                <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 text-center">
-                  <p className="text-2xl font-bold text-green-400">{stmtData.imported}</p>
-                  <p className="text-xs text-gray-500 mt-1">Importados</p>
-                </div>
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
-                  <p className="text-2xl font-bold text-amber-400">{stmtData.duplicates}</p>
-                  <p className="text-xs text-gray-500 mt-1">Duplicados</p>
-                </div>
-                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
-                  <p className="text-2xl font-bold text-red-400">{stmtData.errors}</p>
-                  <p className="text-xs text-gray-500 mt-1">Erros</p>
-                </div>
-              </>}
-              {salesData && <>
-                <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 text-center">
-                  <p className="text-2xl font-bold text-green-400">{salesData.created}</p>
-                  <p className="text-xs text-gray-500 mt-1">Cobranças criadas</p>
-                </div>
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
-                  <p className="text-2xl font-bold text-amber-400">{salesData.skipped}</p>
-                  <p className="text-xs text-gray-500 mt-1">Ignoradas</p>
-                </div>
-                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
-                  <p className="text-2xl font-bold text-red-400">{salesData.errors}</p>
-                  <p className="text-xs text-gray-500 mt-1">Erros</p>
-                </div>
-              </>}
-            </div>
-          )}
-
-          {stmtData  && <ResultTable  data={stmtData}  />}
-          {salesData && <SalesResultTable data={salesData} />}
-
-          {salesData && salesData.created > 0 && (
-            <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-4 flex items-start gap-3">
-              <CheckCircle size={16} className="text-indigo-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-indigo-300">
-                Cobranças criadas. Agora mude para <strong>Extrato Bancário</strong> e importe o arquivo do seu banco para cruzar os pagamentos.
-              </p>
-            </div>
-          )}
-
-          {/* Bank links — only on statement mode */}
-          {mode === 'statement' && (
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <HelpCircle size={14} className="text-gray-400" />
-                <h3 className="text-xs font-semibold text-gray-300">Onde encontrar seu extrato?</h3>
-              </div>
-              <p className="text-xs text-gray-500 mb-3">Veja como exportar seu extrato nos principais bancos</p>
-              <div className="flex flex-wrap gap-2">
-                {BANKS.map(b => <BankButton key={b.name} bank={b} />)}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Right column ── */}
-        <InfoPanel />
+            {t.done && <CheckCircle size={14} className="text-green-400" />}
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Recent imports */}
-      <RecentImports history={history} />
+      {/* ── Passo 1: Vendas ── */}
+      {tab === 'sales' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-200">Importe suas vendas</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Arquivo CSV com as vendas do período. Cada linha vira uma cobrança que o sistema espera receber.
+              </p>
+            </div>
+
+            <ColGuide
+              filename="recix-vendas-modelo.csv"
+              template={SALES_TEMPLATE}
+              cols={[
+                { name: 'valor',    required: true,  example: '350.00' },
+                { name: 'descricao',required: true,  example: 'Amortecedor' },
+                { name: 'data',     required: false, example: '2026-05-01 09:30' },
+              ]}
+            />
+
+            <DropZone accept=".csv" file={salesFile} onFile={f => { setSalesFile(f); salesMutation.reset() }} />
+
+            {salesFile && !salesMutation.data && (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => salesMutation.mutate(salesFile)}
+                  disabled={salesMutation.isPending}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                >
+                  <Upload size={15} />
+                  {salesMutation.isPending ? 'Importando...' : 'Registrar vendas'}
+                </button>
+                <button onClick={resetSales} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+                  Limpar
+                </button>
+              </div>
+            )}
+
+            {salesMutation.error && (
+              <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 flex gap-2 text-sm text-red-400">
+                <XCircle size={15} className="flex-shrink-0 mt-0.5" /> {salesMutation.error.message}
+              </div>
+            )}
+
+            {salesResult && (
+              <SalesResultSummary
+                data={salesResult}
+                onContinue={() => { setTab('statement'); resetSales() }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Passo 2: Extrato bancário ── */}
+      {tab === 'statement' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-200">Importe o extrato bancário</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                OFX exportado do seu banco ou CSV de transações. O Recix cruza automaticamente com as vendas registradas.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* OFX option */}
+              <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle size={14} className="text-green-400" />
+                  <p className="text-xs font-semibold text-green-300">OFX — Recomendado</p>
+                </div>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  Exportado direto do app do banco. O Recix lê automaticamente — sem configurar colunas.
+                </p>
+              </div>
+              {/* CSV option */}
+              <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText size={14} className="text-gray-400" />
+                  <p className="text-xs font-semibold text-gray-300">CSV com colunas</p>
+                </div>
+                <ColGuide
+                  filename="recix-extrato-modelo.csv"
+                  template={STATEMENT_TEMPLATE}
+                  cols={[
+                    { name: 'eventId/id', required: true,  example: 'evt_001' },
+                    { name: 'paidAmount', required: true,  example: '350.00'  },
+                    { name: 'paidAt',     required: true,  example: '2026-05-01T09:35:00Z' },
+                    { name: 'type',       required: false, example: 'credit'  },
+                    { name: 'reference',  required: false, example: 'TX001'   },
+                  ]}
+                />
+              </div>
+            </div>
+
+            <BankTips />
+
+            <DropZone
+              accept=".ofx,.ofc,.csv"
+              file={statementFile}
+              onFile={f => { setStatementFile(f); stmtMutation.reset() }}
+            />
+
+            {statementFile && !stmtMutation.data && (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => stmtMutation.mutate(statementFile)}
+                  disabled={stmtMutation.isPending}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                >
+                  <Upload size={15} />
+                  {stmtMutation.isPending ? 'Importando...' : 'Importar e conciliar'}
+                </button>
+                <button onClick={resetStatement} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+                  Limpar
+                </button>
+              </div>
+            )}
+
+            {stmtMutation.error && (
+              <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 flex gap-2 text-sm text-red-400">
+                <XCircle size={15} className="flex-shrink-0 mt-0.5" /> {stmtMutation.error.message}
+              </div>
+            )}
+
+            {stmtResult && <StatementResultSummary data={stmtResult} />}
+          </div>
+        </div>
+      )}
+
+      {/* Link rápido para conciliações */}
+      {(salesDone || stmtResult) && (
+        <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center">
+              <GitMerge size={18} className="text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-200">Ver resultados da conciliação</p>
+              <p className="text-xs text-gray-500">Acesse o painel para ver o que foi conciliado e as divergências detectadas.</p>
+            </div>
+          </div>
+          <Link
+            to="/reconciliations"
+            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/15 hover:bg-green-500/25 text-green-400 text-sm font-semibold transition-colors border border-green-500/20"
+          >
+            Conciliações <ArrowRight size={14} />
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
