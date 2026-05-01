@@ -15,6 +15,7 @@ import {
   Settings,
   LogOut,
   Upload,
+  Plug,
 } from 'lucide-react'
 import { dashboardService } from '../../services/dashboardService'
 import { organizationsService } from '../../services/organizationsService'
@@ -54,6 +55,7 @@ const navItems: NavItem[] = [
   },
   { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
   { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
+  { kind: 'link', label: 'Conexões',        icon: Plug,   to: '/connections' },
   { kind: 'link', label: 'Importar Extrato', icon: Upload, to: '/import' },
   { kind: 'link', label: 'Configurações', icon: Settings, to: '/settings' },
 ]

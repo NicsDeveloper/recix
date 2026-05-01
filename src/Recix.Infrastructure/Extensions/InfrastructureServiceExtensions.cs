@@ -46,6 +46,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<SwitchOrgUseCase>();
         services.AddScoped<ReviewJoinRequestUseCase>();
         services.AddScoped<ImportBankStatementUseCase>();
+        services.AddScoped<ImportSalesUseCase>();
         services.AddSingleton<PaymentReliabilityMetrics>();
 
         // ─── Auth ─────────────────────────────────────────────────────────────────

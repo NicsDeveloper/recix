@@ -1,21 +1,78 @@
 using Microsoft.Extensions.Logging;
 using Recix.Application.DTOs;
+using Recix.Application.Services;
 
 namespace Recix.Application.UseCases;
 
 /// <summary>
-/// Importa um extrato bancário em CSV e dispara a reconciliação de cada linha.
+/// Importa um extrato bancário em CSV ou OFX e dispara a reconciliação de cada linha.
 ///
-/// Formato esperado (primeira linha = cabeçalho):
+/// CSV — Formato esperado (primeira linha = cabeçalho):
 ///   eventId,paidAmount,paidAt,referenceId,externalChargeId,provider
+///   Campos obrigatórios: eventId, paidAmount, paidAt
 ///
-/// Campos obrigatórios: eventId, paidAmount, paidAt
-/// Campos opcionais:    referenceId, externalChargeId, provider (default = "Import")
+/// OFX — Formato padrão exportado pelos bancos brasileiros (SGML ou XML).
+///   Extrai automaticamente FITID, TRNAMT, DTPOSTED e MEMO.
+///   Apenas transações de crédito (TRNAMT > 0) são importadas.
 /// </summary>
 public sealed class ImportBankStatementUseCase(
     ReceivePixWebhookUseCase webhookUseCase,
     ILogger<ImportBankStatementUseCase> logger)
 {
+    public async Task<ImportStatementResult> ExecuteFromOFXAsync(
+        Stream ofxStream,
+        CancellationToken ct = default)
+    {
+        using var reader  = new StreamReader(ofxStream, leaveOpen: true);
+        var content       = await reader.ReadToEndAsync(ct);
+        var transactions  = OFXParser.ParseTransactions(content);
+
+        var results    = new List<ImportStatementLineResult>();
+        int imported   = 0, duplicates = 0, errors = 0;
+        int lineNum    = 0;
+
+        foreach (var tx in transactions)
+        {
+            lineNum++;
+            try
+            {
+                var request = new ReceivePixWebhookRequest
+                {
+                    EventId    = tx.FitId,
+                    PaidAmount = tx.Amount,
+                    PaidAt     = tx.PostedAt,
+                    Provider   = "OFX",
+                    ReferenceId      = null,
+                    ExternalChargeId = null,
+                };
+
+                var response = await webhookUseCase.ExecuteAsync(request, ct);
+
+                if (response.Status == "IgnoredDuplicate")
+                {
+                    duplicates++;
+                    results.Add(new ImportStatementLineResult { Line = lineNum, EventId = tx.FitId, Status = "Duplicate" });
+                }
+                else
+                {
+                    imported++;
+                    results.Add(new ImportStatementLineResult { Line = lineNum, EventId = tx.FitId, Status = "Imported" });
+                }
+            }
+            catch (Exception ex)
+            {
+                errors++;
+                logger.LogWarning(ex, "Erro ao importar transação OFX FITID={FitId}", tx.FitId);
+                results.Add(new ImportStatementLineResult { Line = lineNum, EventId = tx.FitId, Status = "Error", Error = ex.Message });
+            }
+        }
+
+        logger.LogInformation("Import OFX concluído: {Imported} importados, {Duplicates} duplicados, {Errors} erros",
+            imported, duplicates, errors);
+
+        return new ImportStatementResult { Imported = imported, Duplicates = duplicates, Errors = errors, Lines = results };
+    }
+
     public async Task<ImportStatementResult> ExecuteAsync(
         Stream csvStream,
         CancellationToken ct = default)
@@ -28,24 +85,50 @@ public sealed class ImportBankStatementUseCase(
         if (lines.Count == 0)
             return new ImportStatementResult();
 
-        // Detecta e pula cabeçalho
-        var startIndex = 0;
-        if (lines[0].Contains("eventId", StringComparison.OrdinalIgnoreCase) ||
-            lines[0].Contains("event_id", StringComparison.OrdinalIgnoreCase))
-            startIndex = 1;
+        // ── Detecta cabeçalho e mapeia colunas por nome ──────────────────────
+        // Suporta tanto o formato Recix (eventId,paidAmount,paidAt,...)
+        // quanto formatos de extrato bancário (date,description,amount,type,reference,...)
+        var header = SplitCsv(lines[0].ToLowerInvariant().Replace(" ", "").Replace("_", ""));
+
+        int Col(params string[] names)
+        {
+            foreach (var n in names)
+            {
+                var idx = Array.IndexOf(header, n);
+                if (idx >= 0) return idx;
+            }
+            return -1;
+        }
+
+        // Colunas Recix
+        var idxEventId    = Col("eventid", "event_id", "fitid", "id", "txid", "transactionid");
+        var idxAmount     = Col("paidamount", "paidvalue", "amount", "valor", "trnamt", "value", "credito", "credit");
+        var idxDate       = Col("paidat", "date", "datetime", "data", "dtposted", "datahora", "transactiondate");
+        var idxType       = Col("type", "trntype", "tipo", "transactiontype");
+        var idxReference  = Col("referenceid", "externalchargeid", "reference", "memo", "txid");
+        var idxProvider   = Col("provider", "banco", "bank", "institution");
+        var idxDescription= Col("description", "descricao", "historico", "memo", "narrative");
+
+        bool hasHeader = idxEventId >= 0 || idxAmount >= 0 || idxDate >= 0;
+        int startIndex = hasHeader ? 1 : 0;
+
+        // Se não tem cabeçalho reconhecível, assume formato posicional Recix
+        int posEventId = idxEventId >= 0 ? idxEventId : 0;
+        int posAmount  = idxAmount  >= 0 ? idxAmount  : 1;
+        int posDate    = idxDate    >= 0 ? idxDate    : 2;
 
         var results  = new List<ImportStatementLineResult>();
         int imported = 0, duplicates = 0, errors = 0;
 
         for (var i = startIndex; i < lines.Count; i++)
         {
-            var raw  = lines[i].Trim();
+            var raw = lines[i].Trim();
             if (string.IsNullOrEmpty(raw)) continue;
 
             var lineNum = i + 1;
             var cols    = SplitCsv(raw);
 
-            if (cols.Length < 3)
+            if (cols.Length <= Math.Max(posEventId, Math.Max(posAmount, posDate)))
             {
                 errors++;
                 results.Add(new ImportStatementLineResult
@@ -53,39 +136,70 @@ public sealed class ImportBankStatementUseCase(
                     Line    = lineNum,
                     EventId = cols.Length > 0 ? cols[0] : "",
                     Status  = "Error",
-                    Error   = "Linha deve ter ao menos 3 colunas: eventId, paidAmount, paidAt",
+                    Error   = "Linha com colunas insuficientes.",
                 });
                 continue;
             }
 
-            var eventId          = cols[0].Trim();
-            var amountRaw        = cols[1].Trim();
-            var paidAtRaw        = cols[2].Trim();
-            var referenceId      = cols.Length > 3 ? cols[3].Trim() : null;
-            var externalChargeId = cols.Length > 4 ? cols[4].Trim() : null;
-            var provider         = cols.Length > 5 && !string.IsNullOrWhiteSpace(cols[5]) ? cols[5].Trim() : "Import";
-
-            if (string.IsNullOrWhiteSpace(eventId))
+            // Filtra débitos quando coluna de tipo está presente
+            if (idxType >= 0 && cols.Length > idxType)
             {
-                errors++;
-                results.Add(new ImportStatementLineResult { Line = lineNum, EventId = "", Status = "Error", Error = "eventId vazio." });
-                continue;
+                var tipo = cols[idxType].Trim().ToLowerInvariant();
+                if (tipo is "debit" or "debito" or "d" or "db" or "-")
+                    continue; // ignora silenciosamente
+            }
+
+            var amountRaw = cols[posAmount].Trim();
+            var paidAtRaw = cols[posDate].Trim();
+
+            // Gera eventId a partir da referência ou de dados da linha
+            string eventId;
+            if (posEventId >= 0 && cols.Length > posEventId && !string.IsNullOrWhiteSpace(cols[posEventId]))
+            {
+                eventId = cols[posEventId].Trim();
+            }
+            else if (idxReference >= 0 && cols.Length > idxReference && !string.IsNullOrWhiteSpace(cols[idxReference]))
+            {
+                eventId = $"IMP-{cols[idxReference].Trim()}";
+            }
+            else
+            {
+                eventId = $"IMP-{lineNum}-{amountRaw}-{paidAtRaw}";
             }
 
             if (!decimal.TryParse(amountRaw.Replace(',', '.'), System.Globalization.NumberStyles.Any,
                     System.Globalization.CultureInfo.InvariantCulture, out var paidAmount) || paidAmount <= 0)
             {
                 errors++;
-                results.Add(new ImportStatementLineResult { Line = lineNum, EventId = eventId, Status = "Error", Error = $"paidAmount inválido: '{amountRaw}'." });
+                results.Add(new ImportStatementLineResult { Line = lineNum, EventId = eventId, Status = "Error", Error = $"Valor inválido: '{amountRaw}'." });
                 continue;
             }
 
-            if (!DateTime.TryParse(paidAtRaw, null, System.Globalization.DateTimeStyles.RoundtripKind, out var paidAt))
+            if (!DateTime.TryParse(paidAtRaw, null, System.Globalization.DateTimeStyles.AssumeLocal, out var paidAt))
             {
                 errors++;
-                results.Add(new ImportStatementLineResult { Line = lineNum, EventId = eventId, Status = "Error", Error = $"paidAt inválido: '{paidAtRaw}'." });
+                results.Add(new ImportStatementLineResult { Line = lineNum, EventId = eventId, Status = "Error", Error = $"Data inválida: '{paidAtRaw}'." });
                 continue;
             }
+
+            // Campos de conciliação — tenta referenceId depois externalChargeId
+            var referenceVal = idxReference >= 0 && cols.Length > idxReference
+                ? cols[idxReference].Trim() : null;
+            string? referenceId      = null;
+            string? externalChargeId = null;
+            if (!string.IsNullOrWhiteSpace(referenceVal))
+            {
+                if (referenceVal.StartsWith("RECIX-", StringComparison.OrdinalIgnoreCase))
+                    referenceId = referenceVal;
+                else
+                    externalChargeId = referenceVal;
+            }
+
+            var descProvider = idxDescription >= 0 && cols.Length > idxDescription
+                ? cols[idxDescription].Trim() : null;
+            var provider = idxProvider >= 0 && cols.Length > idxProvider && !string.IsNullOrWhiteSpace(cols[idxProvider])
+                ? cols[idxProvider].Trim()
+                : descProvider ?? "Import";
 
             try
             {
@@ -94,8 +208,8 @@ public sealed class ImportBankStatementUseCase(
                     EventId          = eventId,
                     PaidAmount       = paidAmount,
                     PaidAt           = paidAt.ToUniversalTime(),
-                    ReferenceId      = string.IsNullOrWhiteSpace(referenceId)      ? null : referenceId,
-                    ExternalChargeId = string.IsNullOrWhiteSpace(externalChargeId) ? null : externalChargeId,
+                    ReferenceId      = referenceId,
+                    ExternalChargeId = externalChargeId,
                     Provider         = provider,
                 };
 

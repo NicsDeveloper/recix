@@ -289,6 +289,23 @@ export interface ImportStatementResult {
   lines: ImportLineResult[]
 }
 
+export interface ImportSalesLineResult {
+  line: number
+  description: string
+  amount: number
+  /** 'Created' | 'Skipped' | 'Error' */
+  status: string
+  referenceId?: string | null
+  error?: string | null
+}
+
+export interface ImportSalesResult {
+  created: number
+  skipped: number
+  errors: number
+  lines: ImportSalesLineResult[]
+}
+
 // ─── Alert Config ─────────────────────────────────────────────────────────────
 
 export interface AlertConfig {

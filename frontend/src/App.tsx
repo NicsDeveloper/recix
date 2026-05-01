@@ -16,6 +16,7 @@ import { WebhookSimulatorPage } from './pages/WebhookSimulatorPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ImportPage } from './pages/ImportPage'
+import { ConnectionsPage } from './pages/ConnectionsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { useRealtimeEvents } from './hooks/useRealtimeEvents'
 import { useDashboardRealtime } from './hooks/useDashboardRealtime'
@@ -77,6 +78,7 @@ function AppCore() {
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/webhooks/simulator" element={<WebhookSimulatorPage />} />
           <Route path="/join-requests" element={<JoinRequestsPage />} />
