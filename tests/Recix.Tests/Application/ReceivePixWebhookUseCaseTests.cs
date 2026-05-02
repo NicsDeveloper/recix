@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Recix.Application.DTOs;
+using Recix.Application.Interfaces;
 using Recix.Application.Services;
 using Recix.Application.UseCases;
+using Recix.Domain.Entities;
 using Recix.Domain.Enums;
 using Recix.Tests.Application.Fakes;
 
@@ -9,6 +11,8 @@ namespace Recix.Tests.Application;
 
 public sealed class ReceivePixWebhookUseCaseTests
 {
+    private static readonly Guid ResolvedOrgId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
     private static ReceivePixWebhookRequest BuildRequest(string eventId = "evt_001") => new()
     {
         EventId = eventId,
@@ -19,8 +23,12 @@ public sealed class ReceivePixWebhookUseCaseTests
         Provider = "FakePixProvider"
     };
 
-    private static ReceivePixWebhookUseCase BuildUseCase(FakePaymentEventRepository repo) =>
-        new(repo, new FakeCurrentOrganization(), new NullPaymentProcessorWake(), new PaymentReliabilityMetrics(),
+    private static ReceivePixWebhookUseCase BuildUseCase(
+        FakePaymentEventRepository repo,
+        FakeChargeRepository? charges = null,
+        ICurrentOrganization? currentOrg = null) =>
+        new(repo, currentOrg ?? new FakeCurrentOrganization(), charges ?? new FakeChargeRepository(),
+            new NullPaymentProcessorWake(), new PaymentReliabilityMetrics(),
             NullLogger<ReceivePixWebhookUseCase>.Instance);
 
     [Fact]
@@ -98,5 +106,52 @@ public sealed class ReceivePixWebhookUseCaseTests
         repo.All.Should().HaveCount(1);
         responses.Count(r => r.Status == "Received").Should().Be(1);
         responses.Count(r => r.Status == "IgnoredDuplicate").Should().Be(4);
+    }
+
+    [Fact]
+    public async Task Execute_WithoutJwtOrg_ResolvesOrganizationFromExternalChargeId()
+    {
+        var charges = new FakeChargeRepository();
+        var charge = Charge.Create(ResolvedOrgId, "REF-W", "ext-efi-resolve", 99m, DateTime.UtcNow.AddHours(1));
+        await charges.AddAsync(charge);
+
+        var repo = new FakePaymentEventRepository();
+        var req = new ReceivePixWebhookRequest
+        {
+            EventId          = "evt_efibank_1",
+            ExternalChargeId = "ext-efi-resolve",
+            ReferenceId      = null,
+            PaidAmount       = 99m,
+            PaidAt           = DateTime.UtcNow,
+            Provider         = "EfiBank",
+        };
+
+        await BuildUseCase(repo, charges, new FakeWebhookOrganizationContext()).ExecuteAsync(req);
+
+        repo.All.Should().HaveCount(1);
+        repo.All[0].OrganizationId.Should().Be(ResolvedOrgId);
+    }
+
+    [Fact]
+    public async Task Execute_WithoutJwtOrg_ResolvesOrganizationFromReferenceId()
+    {
+        var charges = new FakeChargeRepository();
+        var charge = Charge.Create(ResolvedOrgId, "REF-ONLY-XYZ", "ext-ignored", 40m, DateTime.UtcNow.AddHours(1));
+        await charges.AddAsync(charge);
+
+        var repo = new FakePaymentEventRepository();
+        var req = new ReceivePixWebhookRequest
+        {
+            EventId          = "evt_ref_only",
+            ExternalChargeId = null,
+            ReferenceId      = "REF-ONLY-XYZ",
+            PaidAmount       = 40m,
+            PaidAt           = DateTime.UtcNow,
+            Provider         = "EfiBank",
+        };
+
+        await BuildUseCase(repo, charges, new FakeWebhookOrganizationContext()).ExecuteAsync(req);
+
+        repo.All[0].OrganizationId.Should().Be(ResolvedOrgId);
     }
 }

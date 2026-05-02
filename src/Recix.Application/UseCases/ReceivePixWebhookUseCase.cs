@@ -11,6 +11,7 @@ namespace Recix.Application.UseCases;
 public sealed class ReceivePixWebhookUseCase(
     IPaymentEventRepository events,
     ICurrentOrganization currentOrg,
+    IChargeRepository charges,
     IPaymentProcessorWake processorWake,
     PaymentReliabilityMetrics metrics,
     ILogger<ReceivePixWebhookUseCase> logger)
@@ -32,9 +33,9 @@ public sealed class ReceivePixWebhookUseCase(
             };
         }
 
-        // Webhooks reais (EfiBank) usam contexto de sistema — todos os orgs
-        // Webhooks via simulador usam o org do usuário autenticado
-        var orgId = currentOrg.OrganizationId ?? Guid.Empty;   // Guid.Empty = webhook sem contexto de org (ex: EfiBank real)
+        // Webhooks reais (EfiBank) costumam vir sem org no JWT — resolvemos pela cobrança para SignalR e multi-tenant.
+        var orgFromJwt = currentOrg.OrganizationId ?? Guid.Empty;
+        var orgId      = await ResolveOrganizationIdAsync(request, orgFromJwt, cancellationToken);
 
         var rawPayload   = JsonSerializer.Serialize(request);
         var paymentEvent = PaymentEvent.Create(
@@ -67,7 +68,7 @@ public sealed class ReceivePixWebhookUseCase(
         metrics.IncrementReceived();
 
         logger.LogInformation("Webhook received: EventId={EventId} Provider={Provider} Amount={Amount} OrgId={OrgId}",
-            request.EventId, request.Provider, request.PaidAmount, orgId);
+            request.EventId, request.Provider, request.PaidAmount, paymentEvent.OrganizationId);
 
         return new ReceivePixWebhookResponse
         {
@@ -75,5 +76,31 @@ public sealed class ReceivePixWebhookUseCase(
             EventId  = request.EventId,
             Status   = "Received"
         };
+    }
+
+    /// <summary>Preenche org a partir da cobrança quando o webhook não traz contexto de organização.</summary>
+    private async Task<Guid> ResolveOrganizationIdAsync(
+        ReceivePixWebhookRequest request,
+        Guid organizationIdFromContext,
+        CancellationToken ct)
+    {
+        if (organizationIdFromContext != Guid.Empty)
+            return organizationIdFromContext;
+
+        if (!string.IsNullOrWhiteSpace(request.ExternalChargeId))
+        {
+            var byExt = await charges.GetByExternalIdAsync(request.ExternalChargeId, ct);
+            if (byExt is not null)
+                return byExt.OrganizationId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReferenceId))
+        {
+            var byRef = await charges.GetByReferenceIdAsync(request.ReferenceId, ct);
+            if (byRef is not null)
+                return byRef.OrganizationId;
+        }
+
+        return Guid.Empty;
     }
 }
