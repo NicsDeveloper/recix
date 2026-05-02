@@ -146,6 +146,69 @@ public sealed class ChargeTests
         act.Should().Throw<DomainException>();
     }
 
+    [Fact]
+    public void MarkAsDivergent_WhenPartiallyPaid_TransitionsToDivergent()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+
+        charge.MarkAsDivergent();
+
+        charge.Status.Should().Be(ChargeStatus.Divergent);
+    }
+
+    [Fact]
+    public void MarkAsDivergent_WhenOverpaid_ThrowsDomainException()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.MarkAsOverpaid();
+
+        var act = () => charge.MarkAsDivergent();
+
+        act.Should().Throw<DomainException>();
+    }
+
+    // --- MarkAsPartiallyPaid / MarkAsOverpaid ---
+
+    [Fact]
+    public void MarkAsPartiallyPaid_WhenPending_TransitionsToPartiallyPaid()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.Status.Should().Be(ChargeStatus.PartiallyPaid);
+    }
+
+    [Fact]
+    public void MarkAsPaid_WhenPartiallyPaid_Succeeds()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.MarkAsPaid();
+        charge.Status.Should().Be(ChargeStatus.Paid);
+    }
+
+    [Fact]
+    public void MarkAsOverpaid_WhenPartiallyPaid_TransitionsToOverpaid()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.MarkAsOverpaid();
+        charge.Status.Should().Be(ChargeStatus.Overpaid);
+    }
+
+    [Fact]
+    public void MarkAsPaid_WhenOverpaid_ThrowsDomainException()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.MarkAsOverpaid();
+
+        var act = () => charge.MarkAsPaid();
+
+        act.Should().Throw<DomainException>();
+    }
+
     // --- MarkAsExpired ---
 
     [Fact]
@@ -183,6 +246,23 @@ public sealed class ChargeTests
     {
         var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsPaid();
+        charge.CanReceivePayment().Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanReceivePayment_WhenPartiallyPaid_ReturnsTrue()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.CanReceivePayment().Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanReceivePayment_WhenOverpaid_ReturnsFalse()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPartiallyPaid();
+        charge.MarkAsOverpaid();
         charge.CanReceivePayment().Should().BeFalse();
     }
 

@@ -34,6 +34,8 @@ public sealed class ReconciliationIssuesDto
     public int Matched                { get; init; }
     public int MatchedLowConfidence   { get; init; }   // aguardando revisão
     public int AmountMismatch         { get; init; }
+    public int PartialPayment         { get; init; }
+    public int PaymentExceedsExpected { get; init; }
     public int DuplicatePayment       { get; init; }
     public int PaymentWithoutCharge   { get; init; }
     public int ChargeWithoutPayment   { get; init; }

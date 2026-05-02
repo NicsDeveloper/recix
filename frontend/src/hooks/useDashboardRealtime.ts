@@ -43,6 +43,8 @@ export function useDashboardRealtime() {
       // Após reconexão, invalida tudo para garantir dados atualizados
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
     })
 
     connection.start().catch((err) => {
@@ -65,8 +67,11 @@ function handleEvent(
       queryClient.invalidateQueries({ queryKey: ['charges'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       if (evt.entityId) {
         queryClient.invalidateQueries({ queryKey: ['charge', evt.entityId] })
+        queryClient.invalidateQueries({ queryKey: ['reconciliations-by-charge', evt.entityId] })
       }
       break
 
@@ -74,22 +79,32 @@ function handleEvent(
       queryClient.invalidateQueries({ queryKey: ['charges'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
 
     case 'reconciliation.created':
       queryClient.invalidateQueries({ queryKey: ['reconciliations'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
 
     case 'payment_event.updated':
       queryClient.invalidateQueries({ queryKey: ['payment-events'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
 
     case 'pending_review.created':
       queryClient.invalidateQueries({ queryKey: ['pending-review'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
 
     case 'join_request.reviewed':

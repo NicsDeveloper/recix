@@ -16,7 +16,7 @@ public sealed class ProcessPaymentEventUseCaseTests
 
     private ProcessPaymentEventUseCase BuildUseCase() =>
         new(_events, _charges, _reconciliations,
-            new ReconciliationEngine(_charges),
+            new ReconciliationEngine(_charges, _reconciliations),
             _metrics,
             new FakeEventBroadcaster(),
             new FakeAlertNotifier(),
@@ -55,10 +55,10 @@ public sealed class ProcessPaymentEventUseCaseTests
         _events.All[0].Status.Should().Be(PaymentEventStatus.Processed);
     }
 
-    // --- Cenário 2: AmountMismatch ---
+    // --- Cenário 2: pagamento parcial (identificador exato) ---
 
     [Fact]
-    public async Task Process_AmountMismatch_ChargeBecomsDivergentAndResultIsAmountMismatch()
+    public async Task Process_PartialUnderpayment_HighIdentifier_ChargePartiallyPaidAndPartialPaymentResult()
     {
         var charge = CreateActiveCharge(150.75m);
         await _charges.AddAsync(charge);
@@ -67,10 +67,63 @@ public sealed class ProcessPaymentEventUseCaseTests
 
         await BuildUseCase().ExecuteAsync(evt.Id);
 
-        charge.Status.Should().Be(ChargeStatus.Divergent);
-        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.AmountMismatch);
+        charge.Status.Should().Be(ChargeStatus.PartiallyPaid);
+        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.PartialPayment);
         _reconciliations.All[0].ExpectedAmount.Should().Be(150.75m);
         _reconciliations.All[0].PaidAmount.Should().Be(140m);
+    }
+
+    [Fact]
+    public async Task Process_TwoPartialsSumToCharge_BecomesPaidWithCumulativeSettlement()
+    {
+        var charge = CreateActiveCharge(500m);
+        await _charges.AddAsync(charge);
+        var e1 = PaymentEvent.Create(TestOrgId, "evt_p1", "ext-001", null, 250m, DateTime.UtcNow, "FakeProvider", "{}");
+        var e2 = PaymentEvent.Create(TestOrgId, "evt_p2", "ext-001", null, 250m, DateTime.UtcNow, "FakeProvider", "{}");
+        await _events.AddAsync(e1);
+        await _events.AddAsync(e2);
+
+        await BuildUseCase().ExecuteAsync(e1.Id);
+        charge.Status.Should().Be(ChargeStatus.PartiallyPaid);
+        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.PartialPayment);
+
+        await BuildUseCase().ExecuteAsync(e2.Id);
+        charge.Status.Should().Be(ChargeStatus.Paid);
+        _reconciliations.All.Should().HaveCount(2);
+        _reconciliations.All[1].Status.Should().Be(ReconciliationStatus.Matched);
+        _reconciliations.All[1].MatchReason.Should().Be(MatchReason.CumulativeSettlement);
+    }
+
+    [Fact]
+    public async Task Process_SecondPayment_OnFullyPaidSmallCharge_IsDuplicate()
+    {
+        var charge = CreateActiveCharge(250m);
+        await _charges.AddAsync(charge);
+        var e1 = PaymentEvent.Create(TestOrgId, "evt_a", "ext-001", null, 250m, DateTime.UtcNow, "FakeProvider", "{}");
+        var e2 = PaymentEvent.Create(TestOrgId, "evt_b", "ext-001", null, 250m, DateTime.UtcNow, "FakeProvider", "{}");
+        await _events.AddAsync(e1);
+        await _events.AddAsync(e2);
+
+        await BuildUseCase().ExecuteAsync(e1.Id);
+        charge.Status.Should().Be(ChargeStatus.Paid);
+
+        await BuildUseCase().ExecuteAsync(e2.Id);
+        charge.Status.Should().Be(ChargeStatus.Paid);
+        _reconciliations.All[1].Status.Should().Be(ReconciliationStatus.DuplicatePayment);
+    }
+
+    [Fact]
+    public async Task Process_SingleOverpayment_MarksOverpaidAndPaymentExceedsExpected()
+    {
+        var charge = CreateActiveCharge(500m);
+        await _charges.AddAsync(charge);
+        var evt = PaymentEvent.Create(TestOrgId, "evt_ov", "ext-001", null, 600m, DateTime.UtcNow, "FakeProvider", "{}");
+        await _events.AddAsync(evt);
+
+        await BuildUseCase().ExecuteAsync(evt.Id);
+
+        charge.Status.Should().Be(ChargeStatus.Overpaid);
+        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.PaymentExceedsExpected);
     }
 
     // --- Cenário 3: DuplicatePayment ---

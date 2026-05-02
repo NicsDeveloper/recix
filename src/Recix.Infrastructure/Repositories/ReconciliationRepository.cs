@@ -88,4 +88,35 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
 
     public Task<bool> HasReconciliationForChargeAsync(Guid chargeId, CancellationToken ct = default) =>
         db.ReconciliationResults.AnyAsync(r => r.ChargeId == chargeId, ct);
+
+    public async Task<decimal> SumAllocatedTowardChargeAsync(Guid chargeId, CancellationToken ct = default)
+    {
+        // Não usa OrgQuery: o chargeId já identifica a cobrança (ex.: jobs sem escopo de org).
+        return await db.ReconciliationResults
+            .Where(r => r.ChargeId == chargeId && r.PaymentEventId != Guid.Empty)
+            .Where(r =>
+                r.Status == ReconciliationStatus.Matched
+                || r.Status == ReconciliationStatus.PartialPayment
+                || (r.Status == ReconciliationStatus.MatchedLowConfidence && r.ReviewDecision == "Confirmed")
+                || (r.Status == ReconciliationStatus.AmountMismatch
+                    && r.ExpectedAmount.HasValue
+                    && r.PaidAmount < r.ExpectedAmount.Value))
+            .SumAsync(r => r.PaidAmount, ct);
+    }
+
+    public async Task AbandonPendingReviewForChargeAsync(Guid chargeId, CancellationToken ct = default)
+    {
+        var rows = await db.ReconciliationResults
+            .Where(r => r.ChargeId == chargeId && r.RequiresReview && r.ReviewDecision == null)
+            .ToListAsync(ct);
+
+        foreach (var r in rows)
+        {
+            r.MarkSupersededByExactIdMatch();
+            db.ReconciliationResults.Update(r);
+        }
+
+        if (rows.Count > 0)
+            await db.SaveChangesAsync(ct);
+    }
 }

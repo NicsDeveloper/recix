@@ -53,23 +53,57 @@ public sealed class Charge
 
     public bool IsExpired() => DateTime.UtcNow > ExpiresAt;
 
-    public bool CanReceivePayment() => Status == ChargeStatus.Pending;
+    public bool CanReceivePayment() =>
+        Status is ChargeStatus.Pending or ChargeStatus.PartiallyPaid or ChargeStatus.Divergent;
 
     public void MarkAsPaid()
     {
-        if (Status is not (ChargeStatus.Pending or ChargeStatus.PendingReview or ChargeStatus.Divergent))
+        if (Status is not (
+                ChargeStatus.Pending
+                or ChargeStatus.PendingReview
+                or ChargeStatus.Divergent
+                or ChargeStatus.PartiallyPaid))
             throw new DomainException($"Cannot mark a {Status} charge as Paid.");
 
         Status    = ChargeStatus.Paid;
         UpdatedAt = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// Registra recebimento parcial: há pagamentos vinculados, mas a soma ainda não cobre <see cref="Amount"/>.
+    /// </summary>
+    public void MarkAsPartiallyPaid()
+    {
+        if (Status is not (
+                ChargeStatus.Pending
+                or ChargeStatus.PartiallyPaid
+                or ChargeStatus.Divergent))
+            throw new DomainException($"Cannot mark a {Status} charge as PartiallyPaid.");
+
+        Status    = ChargeStatus.PartiallyPaid;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
     public void MarkAsDivergent()
     {
-        if (Status is not (ChargeStatus.Pending or ChargeStatus.Expired or ChargeStatus.PendingReview))
+        if (Status is not (
+                ChargeStatus.Pending
+                or ChargeStatus.Expired
+                or ChargeStatus.PendingReview
+                or ChargeStatus.PartiallyPaid))
             throw new DomainException($"Cannot mark a {Status} charge as Divergent.");
 
         Status    = ChargeStatus.Divergent;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>A soma dos pagamentos vinculados superou o valor esperado da cobrança.</summary>
+    public void MarkAsOverpaid()
+    {
+        if (Status is not (ChargeStatus.Pending or ChargeStatus.PartiallyPaid))
+            throw new DomainException($"Cannot mark a {Status} charge as Overpaid.");
+
+        Status    = ChargeStatus.Overpaid;
         UpdatedAt = DateTime.UtcNow;
     }
 

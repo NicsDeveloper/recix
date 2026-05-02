@@ -11,6 +11,7 @@ namespace Recix.Application.UseCases;
 public sealed class ReceivePixWebhookUseCase(
     IPaymentEventRepository events,
     ICurrentOrganization currentOrg,
+    IPaymentProcessorWake processorWake,
     PaymentReliabilityMetrics metrics,
     ILogger<ReceivePixWebhookUseCase> logger)
 {
@@ -49,6 +50,7 @@ public sealed class ReceivePixWebhookUseCase(
         try
         {
             await events.AddAsync(paymentEvent, cancellationToken);
+            processorWake.Pulse();
         }
         catch (DuplicatePaymentEventException)
         {

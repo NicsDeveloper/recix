@@ -15,9 +15,12 @@ import type { Charge, ChargeStatus } from '../types'
 
 const statusOptions: { value: ChargeStatus; label: string }[] = [
   { value: 'Pending', label: 'Pendente' },
+  { value: 'PendingReview', label: 'Em revisão' },
+  { value: 'PartiallyPaid', label: 'Parcialmente pago' },
   { value: 'Paid', label: 'Pago' },
   { value: 'Expired', label: 'Expirado' },
   { value: 'Divergent', label: 'Divergente' },
+  { value: 'Overpaid', label: 'Excedente' },
   { value: 'Cancelled', label: 'Cancelado' },
 ]
 
@@ -38,7 +41,8 @@ export function ChargesPage() {
     queryKey: ['charges', statusFilter],
     queryFn: () =>
       chargesService.list(statusFilter ? { status: statusFilter } : {}),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: false,
   })
 
   if (isError) {

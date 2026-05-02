@@ -1,6 +1,14 @@
 // ─── Status Enums ────────────────────────────────────────────────────────────
 
-export type ChargeStatus = 'Pending' | 'PendingReview' | 'Paid' | 'Expired' | 'Divergent' | 'Cancelled'
+export type ChargeStatus =
+  | 'Pending'
+  | 'PendingReview'
+  | 'PartiallyPaid'
+  | 'Paid'
+  | 'Expired'
+  | 'Divergent'
+  | 'Overpaid'
+  | 'Cancelled'
 
 export type PaymentEventStatus =
   | 'Received'
@@ -13,8 +21,10 @@ export type ReconciliationStatus =
   // Sucesso
   | 'Matched'
   | 'MatchedLowConfidence'       // match por valor — aguarda revisão humana
+  | 'PartialPayment'             // parcial — ainda falta valor
   // Divergências
   | 'AmountMismatch'
+  | 'PaymentExceedsExpected'
   | 'DuplicatePayment'
   | 'ExpiredChargePaid'
   // Ausência de correspondência
@@ -81,6 +91,8 @@ export interface DashboardSummary {
     matched: number
     matchedLowConfidence: number
     amountMismatch: number
+    partialPayment: number
+    paymentExceedsExpected: number
     duplicatePayment: number
     paymentWithoutCharge: number
     chargeWithoutPayment: number
@@ -312,6 +324,8 @@ export interface ClosingReport {
   reconciliationsMatched: number
   reconciliationsMatchedLowConfidence: number
   reconciliationsAmountMismatch: number
+  reconciliationsPartialPayment: number
+  reconciliationsPaymentExceedsExpected: number
   reconciliationsDuplicate: number
   reconciliationsNoCharge: number
   reconciliationsChargeWithoutPayment: number

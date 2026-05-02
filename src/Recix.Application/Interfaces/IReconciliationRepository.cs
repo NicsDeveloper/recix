@@ -37,4 +37,15 @@ public interface IReconciliationRepository
 
     /// <summary>Verifica se uma cobrança já tem algum ReconciliationResult associado.</summary>
     Task<bool> HasReconciliationForChargeAsync(Guid chargeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Soma os valores de pagamentos já contabilizados para a cobrança (Matched, PartialPayment,
+    /// AmountMismatch parcial legado, MatchedLowConfidence confirmado).
+    /// </summary>
+    Task<decimal> SumAllocatedTowardChargeAsync(Guid chargeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Descarta revisões pendentes na cobrança quando um match por identificador exato assume o processamento.
+    /// </summary>
+    Task AbandonPendingReviewForChargeAsync(Guid chargeId, CancellationToken cancellationToken = default);
 }

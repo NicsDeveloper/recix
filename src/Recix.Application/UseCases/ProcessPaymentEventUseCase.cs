@@ -91,7 +91,9 @@ public sealed class ProcessPaymentEventUseCase
                 _broadcaster.Publish(RecixEvent.PendingReviewCreated(outcome.Result.Id, paymentEvent.OrganizationId));
 
             // Notificação proativa de divergências (best-effort, nunca bloqueia)
-            if (!isReviewItem && outcome.Result.Status != ReconciliationStatus.Matched)
+            if (!isReviewItem
+                && outcome.Result.Status is not ReconciliationStatus.Matched
+                && outcome.Result.Status is not ReconciliationStatus.PartialPayment)
             {
                 await _alertNotifier.NotifyAsync(
                     orgId:          paymentEvent.OrganizationId,

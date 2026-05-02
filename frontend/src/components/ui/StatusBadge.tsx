@@ -12,6 +12,10 @@ const statusConfig: Record<AnyStatus, { label: string; className: string }> = {
     label: 'Aguardando revisão',
     className: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
   },
+  PartiallyPaid: {
+    label: 'Parcialmente pago',
+    className: 'bg-sky-500/10 text-sky-400 border border-sky-500/20',
+  },
   Paid: {
     label: 'Pago',
     className: 'bg-green-500/10 text-green-400 border border-green-500/20',
@@ -23,6 +27,10 @@ const statusConfig: Record<AnyStatus, { label: string; className: string }> = {
   Divergent: {
     label: 'Divergente',
     className: 'bg-red-500/10 text-red-400 border border-red-500/20',
+  },
+  Overpaid: {
+    label: 'Excedente',
+    className: 'bg-rose-500/10 text-rose-400 border border-rose-500/20',
   },
   Cancelled: {
     label: 'Cancelado',
@@ -60,6 +68,10 @@ const statusConfig: Record<AnyStatus, { label: string; className: string }> = {
     label: 'Revisar match',
     className: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
   },
+  PartialPayment: {
+    label: 'Pagamento parcial',
+    className: 'bg-sky-500/10 text-sky-400 border border-sky-500/20',
+  },
   ChargeWithoutPayment: {
     label: 'Venda sem pagamento',
     className: 'bg-red-500/10 text-red-400 border border-red-500/20',
@@ -71,6 +83,10 @@ const statusConfig: Record<AnyStatus, { label: string; className: string }> = {
   AmountMismatch: {
     label: 'Valor Divergente',
     className: 'bg-red-500/10 text-red-400 border border-red-500/20',
+  },
+  PaymentExceedsExpected: {
+    label: 'Valor excedente',
+    className: 'bg-rose-500/10 text-rose-400 border border-rose-500/20',
   },
   DuplicatePayment: {
     label: 'Pagamento Duplicado',

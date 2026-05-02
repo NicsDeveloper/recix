@@ -30,7 +30,8 @@ export function PaymentEventsPage() {
     queryKey: ['payment-events', statusFilter],
     queryFn: () =>
       paymentEventsService.list(statusFilter ? { status: statusFilter } : {}),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: false,
   })
 
   if (isError) {

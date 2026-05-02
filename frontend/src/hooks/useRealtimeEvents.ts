@@ -51,7 +51,10 @@ function handleEvent(event: RecixEvent, queryClient: ReturnType<typeof useQueryC
   switch (event.type) {
     case 'charge.updated':
       queryClient.invalidateQueries({ queryKey: ['charges'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       if (event.entityId) {
         queryClient.invalidateQueries({ queryKey: ['charge', event.entityId] })
         queryClient.invalidateQueries({ queryKey: ['reconciliations-by-charge', event.entityId] })
@@ -61,18 +64,27 @@ function handleEvent(event: RecixEvent, queryClient: ReturnType<typeof useQueryC
     case 'charges.expired':
       // Múltiplas cobranças expiraram — invalida tudo
       queryClient.invalidateQueries({ queryKey: ['charges'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
 
     case 'payment_event.updated':
       queryClient.invalidateQueries({ queryKey: ['payment-events'] })
       queryClient.invalidateQueries({ queryKey: ['reconciliations'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
 
     case 'reconciliation.created':
       queryClient.invalidateQueries({ queryKey: ['reconciliations'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['closing-report'] })
       break
   }
 }

@@ -26,6 +26,8 @@ public sealed class ClosingReportDto
     public int ReconciliationsMatched              { get; init; }
     public int ReconciliationsMatchedLowConfidence { get; init; }
     public int ReconciliationsAmountMismatch       { get; init; }
+    public int ReconciliationsPartialPayment       { get; init; }
+    public int ReconciliationsPaymentExceedsExpected { get; init; }
     public int ReconciliationsDuplicate            { get; init; }
     public int ReconciliationsNoCharge             { get; init; }
     public int ReconciliationsChargeWithoutPayment { get; init; }

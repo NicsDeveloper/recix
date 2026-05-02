@@ -18,6 +18,16 @@ public enum ReconciliationStatus
     /// <summary>Cobrança encontrada mas o valor pago diverge do esperado.</summary>
     AmountMismatch,
 
+    /// <summary>
+    /// Pagamento vinculado à cobrança; a soma dos pagamentos contabilizados ainda não atinge o valor esperado.
+    /// </summary>
+    PartialPayment,
+
+    /// <summary>
+    /// Pagamento vinculado que faz a soma dos recebidos superar o valor esperado (excedente / possível duplicidade).
+    /// </summary>
+    PaymentExceedsExpected,
+
     /// <summary>Cobrança já conciliada recebeu um segundo pagamento.</summary>
     DuplicatePayment,
 

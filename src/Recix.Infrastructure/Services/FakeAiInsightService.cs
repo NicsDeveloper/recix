@@ -29,6 +29,14 @@ public sealed class FakeAiInsightService : IAiInsightService
                 $"mas a cobrança esperava R$ {result.ExpectedAmount:F2}. " +
                 $"A diferença de R$ {Math.Abs(result.PaidAmount - result.ExpectedAmount!.Value):F2} indica possível erro no valor enviado pelo pagador.",
 
+            ReconciliationStatus.PartialPayment =>
+                $"Pagamento parcial vinculado à cobrança. O valor deste evento (R$ {result.PaidAmount:F2}) foi contabilizado; " +
+                "a cobrança ainda não está totalmente quitada conforme o histórico de conciliações.",
+
+            ReconciliationStatus.PaymentExceedsExpected =>
+                $"O valor deste pagamento (R$ {result.PaidAmount:F2}) faz a soma dos recebidos superar o esperado para a cobrança. " +
+                "Pode ser excedente ou duplicidade — revise o histórico de eventos vinculados.",
+
             ReconciliationStatus.DuplicatePayment =>
                 $"Este evento representa um pagamento duplicado. A cobrança associada já havia sido paga anteriormente. " +
                 $"O valor de R$ {result.PaidAmount:F2} não foi processado novamente para evitar dupla cobrança.",
@@ -77,12 +85,14 @@ public sealed class FakeAiInsightService : IAiInsightService
 
         var total = charges.Count;
         var paid = charges.Count(c => c.Status == ChargeStatus.Paid);
-        var pending = charges.Count(c => c.Status == ChargeStatus.Pending);
-        var divergent = charges.Count(c => c.Status == ChargeStatus.Divergent);
+        var pending = charges.Count(c => c.Status is ChargeStatus.Pending or ChargeStatus.PartiallyPaid);
+        var divergent = charges.Count(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid);
         var expired = charges.Count(c => c.Status == ChargeStatus.Expired);
         var totalAmount = charges.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount);
         var duplicates = reconciliations.Count(r => r.Status == ReconciliationStatus.DuplicatePayment);
         var mismatches = reconciliations.Count(r => r.Status == ReconciliationStatus.AmountMismatch);
+        var partials   = reconciliations.Count(r => r.Status == ReconciliationStatus.PartialPayment);
+        var exceeds    = reconciliations.Count(r => r.Status == ReconciliationStatus.PaymentExceedsExpected);
         var withoutCharge = reconciliations.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge);
 
         var parts = new List<string>
@@ -107,6 +117,12 @@ public sealed class FakeAiInsightService : IAiInsightService
 
         if (mismatches > 0)
             parts.Add($"{mismatches} pagamento(s) com valor divergente do cobrado.");
+
+        if (partials > 0)
+            parts.Add($"{partials} pagamento(s) registrados como parciais em cobranças ainda em aberto.");
+
+        if (exceeds > 0)
+            parts.Add($"{exceeds} pagamento(s) excederam o valor esperado da cobrança.");
 
         if (withoutCharge > 0)
             parts.Add($"{withoutCharge} pagamento(s) recebido(s) sem cobrança correspondente.");

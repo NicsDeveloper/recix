@@ -122,4 +122,19 @@ public sealed class ReconciliationResult
         ReviewedByUserId = reviewerUserId;
         ReviewDecision   = "Rejected";
     }
+
+    /// <summary>
+    /// Match fuzzy em revisão é descartado porque chegou pagamento com identificador exato da mesma cobrança.
+    /// Não entra na soma de valores alocados até confirmação humana.
+    /// </summary>
+    public void MarkSupersededByExactIdMatch()
+    {
+        if (!RequiresReview)
+            return;
+
+        RequiresReview   = false;
+        ReviewedAt       = DateTime.UtcNow;
+        ReviewedByUserId = null;
+        ReviewDecision   = "SupersededByExactId";
+    }
 }

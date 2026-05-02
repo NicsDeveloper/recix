@@ -21,6 +21,7 @@ public sealed class HttpAlertNotifier(
     private static readonly IReadOnlySet<ReconciliationStatus> AlertableStatuses = new HashSet<ReconciliationStatus>
     {
         ReconciliationStatus.AmountMismatch,
+        ReconciliationStatus.PaymentExceedsExpected,
         ReconciliationStatus.DuplicatePayment,
         ReconciliationStatus.PaymentWithoutCharge,
         ReconciliationStatus.ExpiredChargePaid,
@@ -82,7 +83,8 @@ public sealed class HttpAlertNotifier(
 
     private static bool ShouldNotify(Domain.Entities.OrgAlertConfig config, ReconciliationStatus status) => status switch
     {
-        ReconciliationStatus.AmountMismatch        => config.NotifyAmountMismatch,
+        ReconciliationStatus.AmountMismatch          => config.NotifyAmountMismatch,
+        ReconciliationStatus.PaymentExceedsExpected => config.NotifyAmountMismatch,
         ReconciliationStatus.DuplicatePayment      => config.NotifyDuplicatePayment,
         ReconciliationStatus.PaymentWithoutCharge  => config.NotifyPaymentWithoutCharge,
         ReconciliationStatus.ExpiredChargePaid     => config.NotifyExpiredChargePaid,

@@ -111,6 +111,10 @@ public static class InfrastructureServiceExtensions
         // Singleton: mantém a lista de subscribers SSE entre requests
         services.AddSingleton<IEventBroadcaster, InMemoryEventBroadcaster>();
 
+        // Acorda o processador de PaymentEvent logo após webhook (evita esperar o poll fixo)
+        services.AddSingleton<PaymentProcessorWakeSignal>();
+        services.AddSingleton<IPaymentProcessorWake>(sp => sp.GetRequiredService<PaymentProcessorWakeSignal>());
+
         // Notificador de alertas (outbound webhook)
         services.AddHttpClient("AlertNotifier");
         services.AddScoped<IAlertNotifier, HttpAlertNotifier>();

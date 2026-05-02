@@ -39,7 +39,7 @@ function pctStr(part: number, total: number) {
 }
 
 function isDivergent(status: ReconciliationStatus) {
-  return ['AmountMismatch','DuplicatePayment','PaymentWithoutCharge','ChargeWithoutPayment',
+  return ['AmountMismatch','PaymentExceedsExpected','DuplicatePayment','PaymentWithoutCharge','ChargeWithoutPayment',
           'ExpiredChargePaid','InvalidReference','ProcessingError','MultipleMatchCandidates'].includes(status)
 }
 
@@ -89,8 +89,10 @@ const STATUS_MAP: Record<string, BadgeCfg> = {
   // Sucesso
   Matched:                { label: 'Conciliado',              cls: 'bg-green-500/15  text-green-400  border-green-500/25',  icon: <CheckCircle   size={11}/> },
   MatchedLowConfidence:   { label: 'Revisar match',           cls: 'bg-amber-500/15  text-amber-400  border-amber-500/25',  icon: <AlertTriangle size={11}/> },
+  PartialPayment:         { label: 'Parcial',                 cls: 'bg-sky-500/15    text-sky-400    border-sky-500/25',    icon: <Banknote      size={11}/> },
   // Divergências
   AmountMismatch:         { label: 'Valor divergente',        cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25', icon: <AlertTriangle size={11}/> },
+  PaymentExceedsExpected: { label: 'Excedente',               cls: 'bg-rose-500/15   text-rose-400   border-rose-500/25',   icon: <AlertTriangle size={11}/> },
   DuplicatePayment:       { label: 'Pag. duplicado',          cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25', icon: <Copy          size={11}/> },
   ExpiredChargePaid:      { label: 'Cobrança expirada',       cls: 'bg-gray-500/15   text-gray-400   border-gray-500/25',   icon: <Clock         size={11}/> },
   // Ausência
@@ -373,6 +375,8 @@ const MATCH_REASON_LABEL: Record<string, string> = {
   MultipleCandidates:     'Múltiplos candidatos — seleção manual necessária',
   FoundWithAmountMismatch:'Cobrança encontrada, valor diferente',
   FoundButExpired:        'Cobrança encontrada, mas expirada',
+  CumulativeSettlement:   'Soma de pagamentos completou o valor',
+  PaymentExceedsBalance:  'Pagamento excede saldo pendente',
 }
 
 const CONFIDENCE_LABEL: Record<string, { label: string; color: string }> = {
@@ -670,18 +674,18 @@ function PendingReviewTab() {
 type Tab = 'overview' | 'by-charge' | 'by-event'
 
 const STATUS_OPTIONS: { value: ReconciliationStatus; label: string }[] = [
-  { value: 'Matched',                label: 'Conciliado' },
-  { value: 'MatchedLowConfidence',   label: 'Revisar match' },
-  { value: 'AmountMismatch',         label: 'Valor divergente' },
-  { value: 'DuplicatePayment',       label: 'Pagamento duplicado' },
-  { value: 'PaymentWithoutCharge',   label: 'Pagamento sem cobrança' },
-  { value: 'ChargeWithoutPayment',   label: 'Venda sem pagamento' },
-  { value: 'MultipleMatchCandidates',label: 'Múltiplos candidatos' },
-  { value: 'ExpiredChargePaid',      label: 'Cobrança expirada' },
-  { value: 'InvalidReference',       label: 'Referência inválida' },
-  { value: 'ProcessingError',        label: 'Erro de processamento' },
-  { value: 'InvalidReference',     label: 'Ref. inválida' },
-  { value: 'ProcessingError',      label: 'Erro de proc.' },
+  { value: 'Matched',                  label: 'Conciliado' },
+  { value: 'MatchedLowConfidence',     label: 'Revisar match' },
+  { value: 'PartialPayment',           label: 'Pagamento parcial' },
+  { value: 'AmountMismatch',           label: 'Valor divergente' },
+  { value: 'PaymentExceedsExpected',   label: 'Valor excedente' },
+  { value: 'DuplicatePayment',         label: 'Pagamento duplicado' },
+  { value: 'PaymentWithoutCharge',     label: 'Pagamento sem cobrança' },
+  { value: 'ChargeWithoutPayment',     label: 'Venda sem pagamento' },
+  { value: 'MultipleMatchCandidates',  label: 'Múltiplos candidatos' },
+  { value: 'ExpiredChargePaid',        label: 'Cobrança expirada' },
+  { value: 'InvalidReference',         label: 'Referência inválida' },
+  { value: 'ProcessingError',          label: 'Erro de processamento' },
 ]
 
 
@@ -708,19 +712,22 @@ export function ReconciliationsPage() {
   const { data: overview, isLoading: ovLoading } = useQuery({
     queryKey: ['dashboard-overview', fromDate, toDate],
     queryFn:  () => dashboardService.getOverview({ fromDate, toDate }),
-    staleTime: 20_000,
+    staleTime: 0,
+    refetchInterval: false,
   })
 
   const { data: report } = useQuery({
     queryKey: ['closing-report', fromDate, toDate],
     queryFn:  () => dashboardService.getClosingReport({ fromDate, toDate }),
-    staleTime: 20_000,
+    staleTime: 0,
+    refetchInterval: false,
   })
 
   const { data: pendingReviewData } = useQuery({
     queryKey: ['pending-review'],
     queryFn:  () => reconciliationsService.getPendingReview(),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: false,
   })
   const pendingCount = pendingReviewData?.totalCount ?? 0
 
@@ -734,7 +741,8 @@ export function ReconciliationsPage() {
       divergentOnly: isDivergentMode || undefined,
       fromDate, toDate, page, pageSize,
     }),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: false,
   })
 
   // ── Computed: KPI sparks from flux ────────────────────────────────────────────

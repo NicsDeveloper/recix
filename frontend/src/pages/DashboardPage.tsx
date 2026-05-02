@@ -45,7 +45,9 @@ function trendPct(current: number, previous: number): number | null {
 const BADGE: Record<string, [string, string, string]> = {
   Matched:                ['bg-green-500/15',  'text-green-400',  'border-green-500/25'],
   MatchedLowConfidence:   ['bg-amber-500/15',  'text-amber-400',  'border-amber-500/25'],
+  PartialPayment:         ['bg-sky-500/15',    'text-sky-400',    'border-sky-500/25'],
   AmountMismatch:         ['bg-red-500/15',    'text-red-400',    'border-red-500/25'],
+  PaymentExceedsExpected: ['bg-rose-500/15',   'text-rose-400',   'border-rose-500/25'],
   DuplicatePayment:       ['bg-orange-500/15', 'text-orange-400', 'border-orange-500/25'],
   PaymentWithoutCharge:   ['bg-amber-500/15',  'text-amber-400',  'border-amber-500/25'],
   ChargeWithoutPayment:   ['bg-red-500/15',    'text-red-400',    'border-red-500/25'],
@@ -62,7 +64,9 @@ const BADGE: Record<string, [string, string, string]> = {
 const BADGE_LABEL: Record<string, string> = {
   Matched:                'Conciliado',
   MatchedLowConfidence:   'Revisar match',
+  PartialPayment:         'Parcial',
   AmountMismatch:         'Valor divergente',
+  PaymentExceedsExpected: 'Excedente',
   DuplicatePayment:       'Pag. duplicado',
   PaymentWithoutCharge:   'Pag. sem cobrança',
   ChargeWithoutPayment:   'Venda sem pagamento',
@@ -205,7 +209,7 @@ function DivergenceSummary({
   ri: DashboardSummary['reconciliationIssues']
   amounts: Record<IssueKey, number>
 }) {
-  const allZero = Object.values(amounts).every(v => v === 0) && (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid) === 0
+  const allZero = Object.values(amounts).every(v => v === 0) && (ri.amountMismatch + (ri.paymentExceedsExpected ?? 0) + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid) === 0
 
   return (
     <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
@@ -292,15 +296,15 @@ export function DashboardPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey:        ['dashboard-overview', fromDate, toDate],
     queryFn:         () => dashboardService.getOverview({ fromDate, toDate }),
-    staleTime:       20_000,
-    refetchInterval: 60_000,
+    staleTime:       0,
+    refetchInterval: false,
   })
 
   const { data: pendingReview } = useQuery({
     queryKey:        ['pending-review'],
     queryFn:         () => reconciliationsService.getPendingReview(),
-    staleTime:       30_000,
-    refetchInterval: 60_000,
+    staleTime:       0,
+    refetchInterval: false,
   })
 
   const pendingReviewCount = pendingReview?.totalCount ?? 0
@@ -317,7 +321,7 @@ export function DashboardPage() {
   const divAmt  = effectiveDivergenceAmount(s)
   const expAmt  = Math.max(0, recvAmt - divAmt)
   const isOk    = pendingReviewCount === 0 &&
-    (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.chargeWithoutPayment +
+    (ri.amountMismatch + (ri.paymentExceedsExpected ?? 0) + ri.duplicatePayment + ri.paymentWithoutCharge + ri.chargeWithoutPayment +
      ri.multipleMatchCandidates + ri.expiredChargePaid + ri.invalidReference + ri.processingError) === 0
 
   // ── Sparklines from flux ────────────────────────────────────────────────────

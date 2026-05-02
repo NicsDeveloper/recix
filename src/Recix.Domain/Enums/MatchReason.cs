@@ -31,4 +31,10 @@ public enum MatchReason
 
     /// <summary>Cobrança encontrada mas já havia expirado.</summary>
     FoundButExpired,
+
+    /// <summary>Soma de pagamentos vinculados completou o valor esperado.</summary>
+    CumulativeSettlement,
+
+    /// <summary>O pagamento excede o saldo pendente da cobrança.</summary>
+    PaymentExceedsBalance,
 }

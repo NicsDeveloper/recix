@@ -93,7 +93,7 @@ export function Sidebar() {
     queryFn: () => organizationsService.getPendingCount(),
     enabled: isAdmin,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   })
 
   return (
@@ -190,7 +190,7 @@ function ApiStatus() {
     queryFn:  () => dashboardService.getSummary(),
     staleTime: 60_000,
     retry: false,
-    refetchInterval: 30_000,
+    refetchInterval: 120_000,
   })
 
   const online = isSuccess && !isError

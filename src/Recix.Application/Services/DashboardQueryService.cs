@@ -84,7 +84,8 @@ public sealed class DashboardQueryService(
         IReadOnlyList<Domain.Entities.Charge> ch,
         IReadOnlyList<Domain.Entities.ReconciliationResult> rc)
     {
-        var chargeDiv    = ch.Where(c => c.Status == ChargeStatus.Divergent).Sum(c => c.Amount);
+        var chargeDiv    = ch.Where(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid)
+            .Sum(c => c.Amount);
         var reconAtt     = SumReconciliationAttentionAmount(rc);
         var pendingReview = rc.Count(r => r.RequiresReview && r.ReviewDecision is null);
 
@@ -93,8 +94,10 @@ public sealed class DashboardQueryService(
             TotalCharges          = ch.Count,
             PaidCharges           = ch.Count(c => c.Status == ChargeStatus.Paid),
             // PendingReview é "pendente confirmado" — não conta como recebido ainda
-            PendingCharges        = ch.Count(c => c.Status is ChargeStatus.Pending or ChargeStatus.PendingReview),
-            DivergentCharges      = ch.Count(c => c.Status == ChargeStatus.Divergent),
+            PendingCharges        = ch.Count(c => c.Status is ChargeStatus.Pending
+                                                       or ChargeStatus.PendingReview
+                                                       or ChargeStatus.PartiallyPaid),
+            DivergentCharges      = ch.Count(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid),
             ExpiredCharges        = ch.Count(c => c.Status == ChargeStatus.Expired),
             // Apenas Paid — MatchedLowConfidence não confirmado NÃO conta como recebido
             TotalReceivedAmount   = ch.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount),
@@ -106,9 +109,11 @@ public sealed class DashboardQueryService(
                 Matched                 = rc.Count(r => r.Status == ReconciliationStatus.Matched),
                 MatchedLowConfidence    = rc.Count(r => r.Status == ReconciliationStatus.MatchedLowConfidence),
                 AmountMismatch          = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+                PartialPayment          = rc.Count(r => r.Status == ReconciliationStatus.PartialPayment),
+                PaymentExceedsExpected  = rc.Count(r => r.Status == ReconciliationStatus.PaymentExceedsExpected),
                 DuplicatePayment        = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
                 PaymentWithoutCharge    = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
-                ChargeWithoutPayment    = rc.Count(r => r.Status == ReconciliationStatus.ChargeWithoutPayment),
+                ChargeWithoutPayment     = rc.Count(r => r.Status == ReconciliationStatus.ChargeWithoutPayment),
                 MultipleMatchCandidates = rc.Count(r => r.Status == ReconciliationStatus.MultipleMatchCandidates),
                 ExpiredChargePaid       = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
                 InvalidReference        = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
@@ -132,6 +137,9 @@ public sealed class DashboardQueryService(
                     sum += r.ExpectedAmount is { } exp
                         ? Math.Abs(r.PaidAmount - exp)
                         : r.PaidAmount;
+                    break;
+                case ReconciliationStatus.PaymentExceedsExpected:
+                    sum += r.PaidAmount;
                     break;
                 case ReconciliationStatus.PaymentWithoutCharge:
                 case ReconciliationStatus.DuplicatePayment:
@@ -170,7 +178,7 @@ public sealed class DashboardQueryService(
                      .Select(c => (at: c.UpdatedAt ?? c.CreatedAt, c.Amount))
                      .Where(x => x.at >= rangeStart && x.at < rangeEnd).ToList();
 
-        var div  = ch.Where(c => c.Status == ChargeStatus.Divergent)
+        var div  = ch.Where(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid)
                      .Select(c => (at: c.UpdatedAt ?? c.CreatedAt, c.Amount))
                      .Where(x => x.at >= rangeStart && x.at < rangeEnd).ToList();
 
@@ -192,6 +200,7 @@ public sealed class DashboardQueryService(
     private static readonly ReconciliationStatus[] DivergentStatuses =
     [
         ReconciliationStatus.AmountMismatch,
+        ReconciliationStatus.PaymentExceedsExpected,
         ReconciliationStatus.DuplicatePayment,
         ReconciliationStatus.PaymentWithoutCharge,
         ReconciliationStatus.ChargeWithoutPayment,
@@ -339,8 +348,10 @@ public sealed class DashboardQueryService(
             .ToList();
 
         var paid     = ch.Where(c => c.Status == ChargeStatus.Paid).ToList();
-        var divg     = ch.Where(c => c.Status == ChargeStatus.Divergent).ToList();
-        var pending  = ch.Where(c => c.Status is ChargeStatus.Pending or ChargeStatus.PendingReview).ToList();
+        var divg     = ch.Where(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid).ToList();
+        var pending  = ch.Where(c => c.Status is ChargeStatus.Pending
+                                       or ChargeStatus.PendingReview
+                                       or ChargeStatus.PartiallyPaid).ToList();
 
         var expected  = ch.Sum(c => c.Amount);
         var received  = paid.Sum(c => c.Amount);
@@ -387,6 +398,8 @@ public sealed class DashboardQueryService(
             ReconciliationsMatched              = rc.Count(r => r.Status == ReconciliationStatus.Matched),
             ReconciliationsMatchedLowConfidence = rc.Count(r => r.Status == ReconciliationStatus.MatchedLowConfidence),
             ReconciliationsAmountMismatch       = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+            ReconciliationsPartialPayment       = rc.Count(r => r.Status == ReconciliationStatus.PartialPayment),
+            ReconciliationsPaymentExceedsExpected = rc.Count(r => r.Status == ReconciliationStatus.PaymentExceedsExpected),
             ReconciliationsDuplicate            = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
             ReconciliationsNoCharge             = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
             ReconciliationsChargeWithoutPayment = rc.Count(r => r.Status == ReconciliationStatus.ChargeWithoutPayment),

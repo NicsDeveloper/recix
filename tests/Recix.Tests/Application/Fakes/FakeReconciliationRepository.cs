@@ -46,5 +46,35 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
     public Task<bool> HasReconciliationForChargeAsync(Guid chargeId, CancellationToken ct = default) =>
         Task.FromResult(_store.Any(r => r.ChargeId == chargeId));
 
+    public Task<decimal> SumAllocatedTowardChargeAsync(Guid chargeId, CancellationToken ct = default)
+    {
+        static bool Counts(ReconciliationResult r)
+        {
+            if (r.PaymentEventId == Guid.Empty)
+                return false;
+            if (r.Status == ReconciliationStatus.Matched)
+                return true;
+            if (r.Status == ReconciliationStatus.PartialPayment)
+                return true;
+            if (r.Status == ReconciliationStatus.MatchedLowConfidence && r.ReviewDecision == "Confirmed")
+                return true;
+            return r.Status == ReconciliationStatus.AmountMismatch
+                   && r.ExpectedAmount.HasValue
+                   && r.PaidAmount < r.ExpectedAmount.Value;
+        }
+
+        var sum = _store.Where(r => r.ChargeId == chargeId).Where(Counts).Sum(r => r.PaidAmount);
+        return Task.FromResult(sum);
+    }
+
+    public Task AbandonPendingReviewForChargeAsync(Guid chargeId, CancellationToken ct = default)
+    {
+        foreach (var r in _store.Where(r =>
+                     r.ChargeId == chargeId && r.RequiresReview && r.ReviewDecision == null))
+            r.MarkSupersededByExactIdMatch();
+
+        return Task.CompletedTask;
+    }
+
     public IReadOnlyList<ReconciliationResult> All => _store;
 }

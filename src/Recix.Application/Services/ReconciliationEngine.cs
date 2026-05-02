@@ -14,14 +14,22 @@ public sealed record ReconciliationOutcome(ReconciliationResult Result, Charge? 
 ///   4. Valor + FIFO, 1 candidato        → LOW confidence   (RequiresReview)
 ///   Múltiplos candidatos em 3 ou 4      → MultipleMatchCandidates (RequiresReview)
 ///   ReferenceId informado mas não existe → InvalidReference (sem fallback)
+///
+/// Com identificador exato, o valor é resolvido por saldo: soma dos pagamentos já alocados
+/// vs valor esperado da cobrança (pagamento parcial, conciliação cumulativa, excedente).
 /// </summary>
 public sealed class ReconciliationEngine
 {
     private static readonly TimeSpan MatchWindow = TimeSpan.FromHours(48);
 
-    private readonly IChargeRepository _charges;
+    private readonly IChargeRepository          _charges;
+    private readonly IReconciliationRepository _reconciliations;
 
-    public ReconciliationEngine(IChargeRepository charges) => _charges = charges;
+    public ReconciliationEngine(IChargeRepository charges, IReconciliationRepository reconciliations)
+    {
+        _charges         = charges;
+        _reconciliations = reconciliations;
+    }
 
     public async Task<ReconciliationOutcome> ReconcileAsync(
         PaymentEvent paymentEvent,
@@ -83,10 +91,10 @@ public sealed class ReconciliationEngine
 
     // ── Build outcome ────────────────────────────────────────────────────────────
 
-    private static async Task<ReconciliationOutcome> BuildOutcomeAsync(
+    private async Task<ReconciliationOutcome> BuildOutcomeAsync(
         PaymentEvent evt,
         MatchResult match,
-        CancellationToken _)
+        CancellationToken ct)
     {
         var orgId = evt.OrganizationId;
 
@@ -123,14 +131,14 @@ public sealed class ReconciliationEngine
 
         var charge = match.Charge!;
 
-        // ── Cobrança já conciliada com alta confiança — duplicata definitiva ───────
-        if (charge.Status == ChargeStatus.Paid)
+        // ── Cobrança já liquidada (paga ou excedente consolidado) ──────────────────
+        if (charge.Status is ChargeStatus.Paid or ChargeStatus.Overpaid)
         {
             return new ReconciliationOutcome(
                 ReconciliationResult.Create(
                     orgId, charge.Id, evt.Id,
                     ReconciliationStatus.DuplicatePayment,
-                    "Cobrança já conciliada. Este pagamento é duplicado.",
+                    "Cobrança já liquidada. Este pagamento é duplicado ou excedente.",
                     charge.Amount, evt.PaidAmount,
                     ConfidenceLevel.High, match.Reason, match.MatchedField),
                 null);
@@ -139,44 +147,20 @@ public sealed class ReconciliationEngine
         // ── Cobrança em PendingReview (reservada por outro match de baixa confiança)
         if (charge.Status == ChargeStatus.PendingReview)
         {
-            // Match por ID exato supera a reserva prévia
-            if (match.Confidence == ConfidenceLevel.High)
+            if (match.Confidence != ConfidenceLevel.High)
             {
-                charge.MarkAsPaid();
                 return new ReconciliationOutcome(
                     ReconciliationResult.Create(
                         orgId, charge.Id, evt.Id,
-                        ReconciliationStatus.Matched,
-                        "Conciliado por identificador exato, substituindo match anterior de baixa confiança.",
+                        ReconciliationStatus.DuplicatePayment,
+                        "Cobrança já reservada por outro match em análise.",
                         charge.Amount, evt.PaidAmount,
                         ConfidenceLevel.High, match.Reason, match.MatchedField),
-                    charge);
+                    null);
             }
 
-            // Outro fuzzy — trata como duplicata (a reserva original tem prioridade)
-            return new ReconciliationOutcome(
-                ReconciliationResult.Create(
-                    orgId, charge.Id, evt.Id,
-                    ReconciliationStatus.DuplicatePayment,
-                    "Cobrança já reservada por outro match em análise.",
-                    charge.Amount, evt.PaidAmount,
-                    ConfidenceLevel.High, match.Reason, match.MatchedField),
-                null);
-        }
-
-        // ── Cobrança Divergent com valor correto → re-concilia ────────────────────
-        if (charge.Status == ChargeStatus.Divergent && evt.PaidAmount == charge.Amount
-            && match.Confidence == ConfidenceLevel.High)
-        {
-            charge.MarkAsPaid();
-            return new ReconciliationOutcome(
-                ReconciliationResult.Create(
-                    orgId, charge.Id, evt.Id,
-                    ReconciliationStatus.Matched,
-                    "Re-conciliado com sucesso após novo pagamento com valor correto.",
-                    charge.Amount, evt.PaidAmount,
-                    ConfidenceLevel.High, match.Reason, match.MatchedField),
-                charge);
+            await _reconciliations.AbandonPendingReviewForChargeAsync(charge.Id, ct);
+            charge.RevertToPending();
         }
 
         // ── Cobrança expirada ─────────────────────────────────────────────────────
@@ -193,24 +177,23 @@ public sealed class ReconciliationEngine
                 charge);
         }
 
-        // ── Valor divergente ──────────────────────────────────────────────────────
-        if (evt.PaidAmount != charge.Amount)
-        {
-            charge.MarkAsDivergent();
-            var delta = evt.PaidAmount - charge.Amount;
-            return new ReconciliationOutcome(
-                ReconciliationResult.Create(
-                    orgId, charge.Id, evt.Id,
-                    ReconciliationStatus.AmountMismatch,
-                    $"Valor pago R${evt.PaidAmount:F2} difere do esperado R${charge.Amount:F2} (delta: {delta:+0.00;-0.00}).",
-                    charge.Amount, evt.PaidAmount,
-                    match.Confidence, MatchReason.FoundWithAmountMismatch, match.MatchedField),
-                charge);
-        }
-
-        // ── Match de baixa/média confiança — reserva para revisão ─────────────────
+        // ── Match de baixa/média confiança — reserva para revisão (valor = cobrança) ─
         if (match.Confidence is ConfidenceLevel.Low or ConfidenceLevel.Medium)
         {
+            if (evt.PaidAmount != charge.Amount)
+            {
+                charge.MarkAsDivergent();
+                var delta = evt.PaidAmount - charge.Amount;
+                return new ReconciliationOutcome(
+                    ReconciliationResult.Create(
+                        orgId, charge.Id, evt.Id,
+                        ReconciliationStatus.AmountMismatch,
+                        $"Match fuzzy exige valor igual ao da cobrança. Pago R${evt.PaidAmount:F2} vs cobrança R${charge.Amount:F2} (delta: {delta:+0.00;-0.00}).",
+                        charge.Amount, evt.PaidAmount,
+                        match.Confidence, MatchReason.FoundWithAmountMismatch, match.MatchedField),
+                    charge);
+            }
+
             charge.MarkAsPendingReview();
             return new ReconciliationOutcome(
                 ReconciliationResult.Create(
@@ -222,15 +205,65 @@ public sealed class ReconciliationEngine
                 charge);
         }
 
-        // ── Happy path: match exato + valor correto ───────────────────────────────
-        charge.MarkAsPaid();
+        // ── Alta confiança: saldo = esperado − soma dos pagamentos já alocados ─────
+        var allocatedBefore = await _reconciliations.SumAllocatedTowardChargeAsync(charge.Id, ct);
+        var remaining       = charge.Amount - allocatedBefore;
+
+        if (remaining <= 0)
+        {
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.DuplicatePayment,
+                    "A soma dos pagamentos já cobre o valor esperado desta cobrança. Este evento é duplicado ou excedente.",
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null);
+        }
+
+        var newTotal = allocatedBefore + evt.PaidAmount;
+
+        if (newTotal < charge.Amount)
+        {
+            charge.MarkAsPartiallyPaid();
+            var stillOwed = charge.Amount - newTotal;
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.PartialPayment,
+                    $"Parcialmente pago — total recebido R${newTotal:F2} de R${charge.Amount:F2}; faltam R${stillOwed:F2}.",
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                charge);
+        }
+
+        if (newTotal == charge.Amount)
+        {
+            charge.MarkAsPaid();
+            var reasonText = allocatedBefore > 0
+                ? $"Conciliado por soma de pagamentos — total recebido R${newTotal:F2}."
+                : "Pagamento conciliado com sucesso.";
+            var matchReason = allocatedBefore > 0 ? MatchReason.CumulativeSettlement : match.Reason;
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.Matched,
+                    reasonText,
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, matchReason, match.MatchedField),
+                charge);
+        }
+
+        charge.MarkAsOverpaid();
+        var excess = newTotal - charge.Amount;
         return new ReconciliationOutcome(
             ReconciliationResult.Create(
                 orgId, charge.Id, evt.Id,
-                ReconciliationStatus.Matched,
-                "Pagamento conciliado com sucesso.",
+                ReconciliationStatus.PaymentExceedsExpected,
+                $"Pagamento excede o valor esperado. Saldo pendente antes deste evento: R${remaining:F2}; " +
+                $"com R${evt.PaidAmount:F2} o total ultrapassa em R${excess:F2}.",
                 charge.Amount, evt.PaidAmount,
-                ConfidenceLevel.High, match.Reason, match.MatchedField),
+                ConfidenceLevel.High, MatchReason.PaymentExceedsBalance, match.MatchedField),
             charge);
     }
 
