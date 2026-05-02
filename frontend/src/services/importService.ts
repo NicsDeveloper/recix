@@ -1,4 +1,4 @@
-import type { ImportStatementResult, ImportSalesResult } from '../types'
+import type { ImportStatementResult, ImportSalesResult, ImportPreviewResult } from '../types'
 import { getStoredToken } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../config/env'
 
@@ -19,9 +19,8 @@ async function postFile<T>(endpoint: string, file: File): Promise<T> {
 }
 
 export const importService = {
-  uploadStatement: (file: File) =>
-    postFile<ImportStatementResult>('/import/statement', file),
-
-  uploadSales: (file: File) =>
-    postFile<ImportSalesResult>('/import/sales', file),
+  previewSales:      (file: File) => postFile<ImportPreviewResult>('/import/preview/sales', file),
+  previewStatement:  (file: File) => postFile<ImportPreviewResult>('/import/preview/statement', file),
+  uploadStatement:   (file: File) => postFile<ImportStatementResult>('/import/statement', file),
+  uploadSales:       (file: File) => postFile<ImportSalesResult>('/import/sales', file),
 }

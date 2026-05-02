@@ -327,7 +327,7 @@ function AlertConfigSection() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ROLE_META: Record<string, { label: string; icon: JSX.Element | null; color: string }> = {
+const ROLE_META: Record<string, { label: string; icon: React.ReactElement | null; color: string }> = {
   Owner:  { label: 'Proprietário', icon: <Shield size={13} />,  color: 'text-amber-400' },
   Admin:  { label: 'Administrador', icon: <Shield size={13} />, color: 'text-indigo-400' },
   Member: { label: 'Membro',        icon: <Users  size={13} />, color: 'text-green-400' },

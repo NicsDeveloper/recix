@@ -12,8 +12,7 @@ public sealed class OrgSetupUseCase(
     IUserRepository users,
     IOrganizationRepository orgs,
     IOrganizationJoinRequestRepository joinRequests,
-    IJwtService jwt,
-    LoginUseCase loginHelper)
+    IJwtService jwt)
 {
     public async Task<AuthResponse> CreateOrgAsync(Guid userId, string orgName, CancellationToken ct = default)
     {

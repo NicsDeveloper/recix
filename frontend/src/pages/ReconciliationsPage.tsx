@@ -39,7 +39,8 @@ function pctStr(part: number, total: number) {
 }
 
 function isDivergent(status: ReconciliationStatus) {
-  return ['AmountMismatch','DuplicatePayment','PaymentWithoutCharge','ExpiredChargePaid','InvalidReference','ProcessingError'].includes(status)
+  return ['AmountMismatch','DuplicatePayment','PaymentWithoutCharge','ChargeWithoutPayment',
+          'ExpiredChargePaid','InvalidReference','ProcessingError','MultipleMatchCandidates'].includes(status)
 }
 
 // ─── Sparkline ────────────────────────────────────────────────────────────────
@@ -85,13 +86,20 @@ function KpiCard({ title, value, subtitle, sparkValues, color, textColor }: {
 type BadgeCfg = { label: string; cls: string; icon: React.ReactNode }
 
 const STATUS_MAP: Record<string, BadgeCfg> = {
-  Matched:              { label: 'Conciliado',             cls: 'bg-green-500/15  text-green-400  border-green-500/25',  icon: <CheckCircle  size={11}/> },
-  AmountMismatch:       { label: 'Valor divergente',       cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25', icon: <AlertTriangle size={11}/> },
-  DuplicatePayment:     { label: 'Pagamento duplicado',    cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25', icon: <Copy         size={11}/> },
-  PaymentWithoutCharge: { label: 'Pagamento sem cobrança', cls: 'bg-amber-500/15  text-amber-400  border-amber-500/25',  icon: <Ban          size={11}/> },
-  ExpiredChargePaid:    { label: 'Cobrança expirada',      cls: 'bg-gray-500/15   text-gray-400   border-gray-500/25',   icon: <Clock        size={11}/> },
-  InvalidReference:     { label: 'Ref. inválida',          cls: 'bg-purple-500/15 text-purple-400 border-purple-500/25', icon: <AlertTriangle size={11}/> },
-  ProcessingError:      { label: 'Erro de proc.',          cls: 'bg-red-500/15    text-red-400    border-red-500/25',    icon: <AlertTriangle size={11}/> },
+  // Sucesso
+  Matched:                { label: 'Conciliado',              cls: 'bg-green-500/15  text-green-400  border-green-500/25',  icon: <CheckCircle   size={11}/> },
+  MatchedLowConfidence:   { label: 'Revisar match',           cls: 'bg-amber-500/15  text-amber-400  border-amber-500/25',  icon: <AlertTriangle size={11}/> },
+  // Divergências
+  AmountMismatch:         { label: 'Valor divergente',        cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25', icon: <AlertTriangle size={11}/> },
+  DuplicatePayment:       { label: 'Pag. duplicado',          cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25', icon: <Copy          size={11}/> },
+  ExpiredChargePaid:      { label: 'Cobrança expirada',       cls: 'bg-gray-500/15   text-gray-400   border-gray-500/25',   icon: <Clock         size={11}/> },
+  // Ausência
+  PaymentWithoutCharge:   { label: 'Pag. sem cobrança',       cls: 'bg-amber-500/15  text-amber-400  border-amber-500/25',  icon: <Ban           size={11}/> },
+  ChargeWithoutPayment:   { label: 'Venda sem pagamento',     cls: 'bg-red-500/15    text-red-400    border-red-500/25',    icon: <Ban           size={11}/> },
+  MultipleMatchCandidates:{ label: 'Múlt. candidatos',        cls: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/25', icon: <AlertTriangle size={11}/> },
+  // Erros
+  InvalidReference:       { label: 'Ref. inválida',           cls: 'bg-purple-500/15 text-purple-400 border-purple-500/25', icon: <AlertTriangle size={11}/> },
+  ProcessingError:        { label: 'Erro de proc.',           cls: 'bg-red-500/15    text-red-400    border-red-500/25',    icon: <AlertTriangle size={11}/> },
 }
 
 function ReconcStatusBadge({ status }: { status: string }) {
@@ -662,18 +670,20 @@ function PendingReviewTab() {
 type Tab = 'overview' | 'by-charge' | 'by-event'
 
 const STATUS_OPTIONS: { value: ReconciliationStatus; label: string }[] = [
-  { value: 'Matched',              label: 'Conciliado' },
-  { value: 'AmountMismatch',       label: 'Valor divergente' },
-  { value: 'DuplicatePayment',     label: 'Pagamento duplicado' },
-  { value: 'PaymentWithoutCharge', label: 'Pagamento sem cobrança' },
-  { value: 'ExpiredChargePaid',    label: 'Cobrança expirada' },
+  { value: 'Matched',                label: 'Conciliado' },
+  { value: 'MatchedLowConfidence',   label: 'Revisar match' },
+  { value: 'AmountMismatch',         label: 'Valor divergente' },
+  { value: 'DuplicatePayment',       label: 'Pagamento duplicado' },
+  { value: 'PaymentWithoutCharge',   label: 'Pagamento sem cobrança' },
+  { value: 'ChargeWithoutPayment',   label: 'Venda sem pagamento' },
+  { value: 'MultipleMatchCandidates',label: 'Múltiplos candidatos' },
+  { value: 'ExpiredChargePaid',      label: 'Cobrança expirada' },
+  { value: 'InvalidReference',       label: 'Referência inválida' },
+  { value: 'ProcessingError',        label: 'Erro de processamento' },
   { value: 'InvalidReference',     label: 'Ref. inválida' },
   { value: 'ProcessingError',      label: 'Erro de proc.' },
 ]
 
-const DIVERGENT_STATUSES: ReconciliationStatus[] = [
-  'AmountMismatch', 'DuplicatePayment', 'PaymentWithoutCharge', 'ExpiredChargePaid', 'InvalidReference', 'ProcessingError',
-]
 
 export function ReconciliationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Recix.Application.DTOs;
 using Recix.Application.Interfaces;
 using Recix.Application.UseCases;
+using Recix.Domain.Entities;
 using Recix.Domain.Enums;
 
 namespace Recix.Api.Endpoints;

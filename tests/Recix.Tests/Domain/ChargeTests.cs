@@ -88,10 +88,24 @@ public sealed class ChargeTests
     }
 
     [Fact]
-    public void MarkAsPaid_WhenDivergent_ThrowsDomainException()
+    public void MarkAsPaid_WhenDivergent_Succeeds()
     {
+        // Divergent → Paid é permitido para suportar re-conciliação:
+        // quando um pagamento com valor correto chega para uma cobrança que estava Divergent.
         var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
         charge.MarkAsDivergent();
+
+        var act = () => charge.MarkAsPaid();
+
+        act.Should().NotThrow();
+        charge.Status.Should().Be(ChargeStatus.Paid);
+    }
+
+    [Fact]
+    public void MarkAsPaid_WhenExpired_ThrowsDomainException()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsExpired();
 
         var act = () => charge.MarkAsPaid();
 

@@ -25,11 +25,26 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
         Task.FromResult<IReadOnlyList<ReconciliationResult>>(
             _store.Where(r => r.Status == status && r.OrganizationId == organizationId).ToList());
 
+    public Task UpdateAsync(ReconciliationResult result, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
     public Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         _store.RemoveAll(r => r.Id == id);
         return Task.CompletedTask;
     }
+
+    public Task<IReadOnlyList<ReconciliationResult>> GetPendingReviewAsync(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ReconciliationResult>>(
+            _store.Where(r => r.OrganizationId == organizationId && r.RequiresReview && r.ReviewDecision == null)
+                  .OrderByDescending(r => r.PaidAmount)
+                  .ToList());
+
+    public Task<int> CountPendingReviewAsync(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(_store.Count(r => r.OrganizationId == organizationId && r.RequiresReview && r.ReviewDecision == null));
+
+    public Task<bool> HasReconciliationForChargeAsync(Guid chargeId, CancellationToken ct = default) =>
+        Task.FromResult(_store.Any(r => r.ChargeId == chargeId));
 
     public IReadOnlyList<ReconciliationResult> All => _store;
 }

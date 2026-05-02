@@ -9,7 +9,7 @@ public sealed class FakeEventBroadcaster : IEventBroadcaster
     public void Publish(RecixEvent evt) => Published.Add(evt);
 
 #pragma warning disable CS1998
-    public async IAsyncEnumerable<RecixEvent> SubscribeAsync(CancellationToken ct)
+    public async IAsyncEnumerable<RecixEvent> SubscribeAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         yield break;
     }

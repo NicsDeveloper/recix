@@ -22,14 +22,17 @@ public sealed class ClosingReportDto
     public decimal RecoveryRate      { get; init; }
 
     // ── Conciliações ──────────────────────────────────────────────────────────
-    public int ReconciliationsTotal          { get; init; }
-    public int ReconciliationsMatched        { get; init; }
-    public int ReconciliationsAmountMismatch { get; init; }
-    public int ReconciliationsDuplicate      { get; init; }
-    public int ReconciliationsNoCharge       { get; init; }
-    public int ReconciliationsExpiredPaid    { get; init; }
-    public int ReconciliationsInvalidRef     { get; init; }
-    public int ReconciliationsError          { get; init; }
+    public int ReconciliationsTotal                { get; init; }
+    public int ReconciliationsMatched              { get; init; }
+    public int ReconciliationsMatchedLowConfidence { get; init; }
+    public int ReconciliationsAmountMismatch       { get; init; }
+    public int ReconciliationsDuplicate            { get; init; }
+    public int ReconciliationsNoCharge             { get; init; }
+    public int ReconciliationsChargeWithoutPayment { get; init; }
+    public int ReconciliationsMultipleMatch        { get; init; }
+    public int ReconciliationsExpiredPaid          { get; init; }
+    public int ReconciliationsInvalidRef           { get; init; }
+    public int ReconciliationsError                { get; init; }
 
     // ── Cobranças não conciliadas ─────────────────────────────────────────────
     public IReadOnlyList<UnreconciledChargeDto> Unreconciled { get; init; } = [];

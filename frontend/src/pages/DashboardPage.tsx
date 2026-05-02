@@ -43,25 +43,37 @@ function trendPct(current: number, previous: number): number | null {
 // ─── Badge ────────────────────────────────────────────────────────────────────
 
 const BADGE: Record<string, [string, string, string]> = {
-  Matched:              ['bg-green-500/15',  'text-green-400',  'border-green-500/25'],
-  AmountMismatch:       ['bg-red-500/15',    'text-red-400',    'border-red-500/25'],
-  DuplicatePayment:     ['bg-orange-500/15', 'text-orange-400', 'border-orange-500/25'],
-  PaymentWithoutCharge: ['bg-amber-500/15',  'text-amber-400',  'border-amber-500/25'],
-  ExpiredChargePaid:    ['bg-yellow-500/15', 'text-yellow-400', 'border-yellow-500/25'],
-  InvalidReference:     ['bg-purple-500/15', 'text-purple-400', 'border-purple-500/25'],
-  ProcessingError:      ['bg-gray-500/15',   'text-gray-400',   'border-gray-500/25'],
-  Processed:            ['bg-green-500/15',  'text-green-400',  'border-green-500/25'],
-  Processing:           ['bg-blue-500/15',   'text-blue-400',   'border-blue-500/25'],
-  Received:             ['bg-indigo-500/15', 'text-indigo-400', 'border-indigo-500/25'],
-  IgnoredDuplicate:     ['bg-gray-500/15',   'text-gray-400',   'border-gray-500/25'],
+  Matched:                ['bg-green-500/15',  'text-green-400',  'border-green-500/25'],
+  MatchedLowConfidence:   ['bg-amber-500/15',  'text-amber-400',  'border-amber-500/25'],
+  AmountMismatch:         ['bg-red-500/15',    'text-red-400',    'border-red-500/25'],
+  DuplicatePayment:       ['bg-orange-500/15', 'text-orange-400', 'border-orange-500/25'],
+  PaymentWithoutCharge:   ['bg-amber-500/15',  'text-amber-400',  'border-amber-500/25'],
+  ChargeWithoutPayment:   ['bg-red-500/15',    'text-red-400',    'border-red-500/25'],
+  MultipleMatchCandidates:['bg-indigo-500/15', 'text-indigo-400', 'border-indigo-500/25'],
+  ExpiredChargePaid:      ['bg-yellow-500/15', 'text-yellow-400', 'border-yellow-500/25'],
+  InvalidReference:       ['bg-purple-500/15', 'text-purple-400', 'border-purple-500/25'],
+  ProcessingError:        ['bg-gray-500/15',   'text-gray-400',   'border-gray-500/25'],
+  Processed:              ['bg-green-500/15',  'text-green-400',  'border-green-500/25'],
+  Processing:             ['bg-blue-500/15',   'text-blue-400',   'border-blue-500/25'],
+  Received:               ['bg-indigo-500/15', 'text-indigo-400', 'border-indigo-500/25'],
+  IgnoredDuplicate:       ['bg-gray-500/15',   'text-gray-400',   'border-gray-500/25'],
 }
 
 const BADGE_LABEL: Record<string, string> = {
-  Matched: 'Conciliado', AmountMismatch: 'Valor divergente',
-  DuplicatePayment: 'Pag. duplicado', PaymentWithoutCharge: 'Sem cobrança',
-  ExpiredChargePaid: 'Cobrança expirada', InvalidReference: 'Ref. inválida',
-  ProcessingError: 'Erro', Processed: 'Processado', Processing: 'Processando',
-  Received: 'Recebido', IgnoredDuplicate: 'Ignorado',
+  Matched:                'Conciliado',
+  MatchedLowConfidence:   'Revisar match',
+  AmountMismatch:         'Valor divergente',
+  DuplicatePayment:       'Pag. duplicado',
+  PaymentWithoutCharge:   'Pag. sem cobrança',
+  ChargeWithoutPayment:   'Venda sem pagamento',
+  MultipleMatchCandidates:'Múlt. candidatos',
+  ExpiredChargePaid:      'Cobrança expirada',
+  InvalidReference:       'Ref. inválida',
+  ProcessingError:        'Erro',
+  Processed:              'Processado',
+  Processing:             'Processando',
+  Received:               'Recebido',
+  IgnoredDuplicate:       'Ignorado',
 }
 
 function Badge({ status }: { status: string }) {
@@ -294,7 +306,9 @@ export function DashboardPage() {
   const recvAmt = s.totalReceivedAmount
   const divAmt  = effectiveDivergenceAmount(s)
   const expAmt  = Math.max(0, recvAmt - divAmt)
-  const isOk    = (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid + ri.invalidReference) === 0
+  const isOk    = pendingReviewCount === 0 &&
+    (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.chargeWithoutPayment +
+     ri.multipleMatchCandidates + ri.expiredChargePaid + ri.invalidReference + ri.processingError) === 0
 
   // ── Sparklines from flux ────────────────────────────────────────────────────
   const spExp  = sparkFromSeries(data.fluxSeries, 'expected')

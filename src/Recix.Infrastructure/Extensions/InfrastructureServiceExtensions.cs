@@ -50,6 +50,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ImportBankStatementUseCase>();
         services.AddScoped<ImportSalesUseCase>();
         services.AddScoped<ReviewReconciliationUseCase>();
+        services.AddScoped<ImportPreviewUseCase>();
         services.AddSingleton<PaymentReliabilityMetrics>();
 
         // ─── Auth ─────────────────────────────────────────────────────────────────

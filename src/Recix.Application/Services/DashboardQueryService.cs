@@ -84,28 +84,35 @@ public sealed class DashboardQueryService(
         IReadOnlyList<Domain.Entities.Charge> ch,
         IReadOnlyList<Domain.Entities.ReconciliationResult> rc)
     {
-        var chargeDiv = ch.Where(c => c.Status == ChargeStatus.Divergent).Sum(c => c.Amount);
-        var reconAtt  = SumReconciliationAttentionAmount(rc);
+        var chargeDiv    = ch.Where(c => c.Status == ChargeStatus.Divergent).Sum(c => c.Amount);
+        var reconAtt     = SumReconciliationAttentionAmount(rc);
+        var pendingReview = rc.Count(r => r.RequiresReview && r.ReviewDecision is null);
 
         return new DashboardSummaryDto
         {
             TotalCharges          = ch.Count,
             PaidCharges           = ch.Count(c => c.Status == ChargeStatus.Paid),
-            PendingCharges        = ch.Count(c => c.Status == ChargeStatus.Pending),
+            // PendingReview é "pendente confirmado" — não conta como recebido ainda
+            PendingCharges        = ch.Count(c => c.Status is ChargeStatus.Pending or ChargeStatus.PendingReview),
             DivergentCharges      = ch.Count(c => c.Status == ChargeStatus.Divergent),
             ExpiredCharges        = ch.Count(c => c.Status == ChargeStatus.Expired),
+            // Apenas Paid — MatchedLowConfidence não confirmado NÃO conta como recebido
             TotalReceivedAmount   = ch.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount),
             TotalDivergentAmount  = chargeDiv,
             TotalReconciliationAttentionAmount = reconAtt,
+            PendingReviewCount    = pendingReview,
             ReconciliationIssues  = new ReconciliationIssuesDto
             {
-                Matched              = rc.Count(r => r.Status == ReconciliationStatus.Matched),
-                AmountMismatch       = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
-                DuplicatePayment     = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
-                PaymentWithoutCharge = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
-                ExpiredChargePaid    = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
-                InvalidReference     = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
-                ProcessingError      = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
+                Matched                 = rc.Count(r => r.Status == ReconciliationStatus.Matched),
+                MatchedLowConfidence    = rc.Count(r => r.Status == ReconciliationStatus.MatchedLowConfidence),
+                AmountMismatch          = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+                DuplicatePayment        = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
+                PaymentWithoutCharge    = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
+                ChargeWithoutPayment    = rc.Count(r => r.Status == ReconciliationStatus.ChargeWithoutPayment),
+                MultipleMatchCandidates = rc.Count(r => r.Status == ReconciliationStatus.MultipleMatchCandidates),
+                ExpiredChargePaid       = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
+                InvalidReference        = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
+                ProcessingError         = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
             },
         };
     }
@@ -129,12 +136,18 @@ public sealed class DashboardQueryService(
                 case ReconciliationStatus.PaymentWithoutCharge:
                 case ReconciliationStatus.DuplicatePayment:
                 case ReconciliationStatus.ExpiredChargePaid:
+                case ReconciliationStatus.MultipleMatchCandidates:
                     sum += r.PaidAmount;
+                    break;
+                case ReconciliationStatus.ChargeWithoutPayment:
+                    // Valor esperado que nunca chegou → exposição é o valor da cobrança
+                    sum += r.ExpectedAmount ?? 0;
                     break;
                 case ReconciliationStatus.InvalidReference:
                 case ReconciliationStatus.ProcessingError:
                     sum += r.PaidAmount;
                     break;
+                // MatchedLowConfidence não entra na atenção — é revisão, não divergência confirmada
                 default:
                     break;
             }
@@ -181,9 +194,12 @@ public sealed class DashboardQueryService(
         ReconciliationStatus.AmountMismatch,
         ReconciliationStatus.DuplicatePayment,
         ReconciliationStatus.PaymentWithoutCharge,
+        ReconciliationStatus.ChargeWithoutPayment,
+        ReconciliationStatus.MultipleMatchCandidates,
         ReconciliationStatus.ExpiredChargePaid,
         ReconciliationStatus.InvalidReference,
         ReconciliationStatus.ProcessingError,
+        // MatchedLowConfidence não é "divergência" — vai para a aba Revisão
     ];
 
     public async Task<PagedResult<RecentReconciliationDto>> GetReconciliationsListAsync(
@@ -324,7 +340,7 @@ public sealed class DashboardQueryService(
 
         var paid     = ch.Where(c => c.Status == ChargeStatus.Paid).ToList();
         var divg     = ch.Where(c => c.Status == ChargeStatus.Divergent).ToList();
-        var pending  = ch.Where(c => c.Status == ChargeStatus.Pending).ToList();
+        var pending  = ch.Where(c => c.Status is ChargeStatus.Pending or ChargeStatus.PendingReview).ToList();
 
         var expected  = ch.Sum(c => c.Amount);
         var received  = paid.Sum(c => c.Amount);
@@ -367,14 +383,17 @@ public sealed class DashboardQueryService(
             DivergentAmount  = divergent,
             PendingAmount    = pendAmt,
             RecoveryRate     = recovery,
-            ReconciliationsTotal          = rc.Count,
-            ReconciliationsMatched        = rc.Count(r => r.Status == ReconciliationStatus.Matched),
-            ReconciliationsAmountMismatch = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
-            ReconciliationsDuplicate      = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
-            ReconciliationsNoCharge       = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
-            ReconciliationsExpiredPaid    = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
-            ReconciliationsInvalidRef     = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
-            ReconciliationsError          = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
+            ReconciliationsTotal                = rc.Count,
+            ReconciliationsMatched              = rc.Count(r => r.Status == ReconciliationStatus.Matched),
+            ReconciliationsMatchedLowConfidence = rc.Count(r => r.Status == ReconciliationStatus.MatchedLowConfidence),
+            ReconciliationsAmountMismatch       = rc.Count(r => r.Status == ReconciliationStatus.AmountMismatch),
+            ReconciliationsDuplicate            = rc.Count(r => r.Status == ReconciliationStatus.DuplicatePayment),
+            ReconciliationsNoCharge             = rc.Count(r => r.Status == ReconciliationStatus.PaymentWithoutCharge),
+            ReconciliationsChargeWithoutPayment = rc.Count(r => r.Status == ReconciliationStatus.ChargeWithoutPayment),
+            ReconciliationsMultipleMatch        = rc.Count(r => r.Status == ReconciliationStatus.MultipleMatchCandidates),
+            ReconciliationsExpiredPaid          = rc.Count(r => r.Status == ReconciliationStatus.ExpiredChargePaid),
+            ReconciliationsInvalidRef           = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
+            ReconciliationsError                = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
             Unreconciled     = unreconciled,
         };
     }

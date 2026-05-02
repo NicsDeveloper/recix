@@ -1,6 +1,6 @@
 // ─── Status Enums ────────────────────────────────────────────────────────────
 
-export type ChargeStatus = 'Pending' | 'Paid' | 'Expired' | 'Divergent' | 'Cancelled'
+export type ChargeStatus = 'Pending' | 'PendingReview' | 'Paid' | 'Expired' | 'Divergent' | 'Cancelled'
 
 export type PaymentEventStatus =
   | 'Received'
@@ -10,11 +10,18 @@ export type PaymentEventStatus =
   | 'IgnoredDuplicate'
 
 export type ReconciliationStatus =
+  // Sucesso
   | 'Matched'
+  | 'MatchedLowConfidence'       // match por valor — aguarda revisão humana
+  // Divergências
   | 'AmountMismatch'
   | 'DuplicatePayment'
-  | 'PaymentWithoutCharge'
   | 'ExpiredChargePaid'
+  // Ausência de correspondência
+  | 'PaymentWithoutCharge'
+  | 'ChargeWithoutPayment'       // cobrança que venceu sem pagamento
+  | 'MultipleMatchCandidates'   // fuzzy encontrou > 1 candidato
+  // Erros
   | 'InvalidReference'
   | 'ProcessingError'
 
@@ -66,11 +73,18 @@ export interface DashboardSummary {
   totalDivergentAmount: number
   /** Soma monetária das conciliações problemáticas (pode ser maior que zero quando totalDivergentAmount é 0). */
   totalReconciliationAttentionAmount?: number
+  /** Quantos resultados de conciliação aguardam revisão humana. */
+  pendingReviewCount: number
+  /** False enquanto houver itens pendentes de revisão — bloqueia o fechamento do período. */
+  periodCloseable: boolean
   reconciliationIssues: {
     matched: number
+    matchedLowConfidence: number
     amountMismatch: number
     duplicatePayment: number
     paymentWithoutCharge: number
+    chargeWithoutPayment: number
+    multipleMatchCandidates: number
     expiredChargePaid: number
     invalidReference: number
     processingError: number
@@ -296,9 +310,12 @@ export interface ClosingReport {
   recoveryRate: number
   reconciliationsTotal: number
   reconciliationsMatched: number
+  reconciliationsMatchedLowConfidence: number
   reconciliationsAmountMismatch: number
   reconciliationsDuplicate: number
   reconciliationsNoCharge: number
+  reconciliationsChargeWithoutPayment: number
+  reconciliationsMultipleMatch: number
   reconciliationsExpiredPaid: number
   reconciliationsInvalidRef: number
   reconciliationsError: number
@@ -338,6 +355,34 @@ export interface ImportSalesResult {
   skipped: number
   errors: number
   lines: ImportSalesLineResult[]
+}
+
+// ─── Import Preview ───────────────────────────────────────────────────────────
+
+export type LineValidationStatus = 'Ok' | 'Warning' | 'Error'
+
+export interface ImportPreviewLine {
+  lineNumber:  number
+  status:      LineValidationStatus
+  message:     string | null
+  eventId:     string | null
+  amount:      number | null
+  date:        string | null
+  description: string | null
+  reference:   string | null
+  provider:    string | null
+}
+
+export interface ImportPreviewResult {
+  type:             'Sales' | 'BankStatement'
+  fileName:         string
+  totalLines:       number
+  validLines:       number
+  warningLines:     number
+  errorLines:       number
+  hasBlockingErrors: boolean
+  detectedColumns:  string[]
+  lines:            ImportPreviewLine[]
 }
 
 // ─── Alert Config ─────────────────────────────────────────────────────────────

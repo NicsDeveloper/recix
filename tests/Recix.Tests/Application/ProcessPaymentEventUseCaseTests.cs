@@ -90,12 +90,28 @@ public sealed class ProcessPaymentEventUseCaseTests
         _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.DuplicatePayment);
     }
 
-    // --- Cenário 4: PaymentWithoutCharge ---
+    // --- Cenário 4a: InvalidReference (ExternalChargeId fornecido mas não encontrado) ---
 
     [Fact]
-    public async Task Process_PaymentWithoutCharge_ResultIsPaymentWithoutCharge()
+    public async Task Process_WithUnknownExternalChargeId_ResultIsInvalidReference()
     {
+        // ExternalChargeId fornecido → engine não faz fallback para fuzzy; retorna InvalidReference.
         var evt = PaymentEvent.Create(TestOrgId, "evt_001", "nonexistent-ext", null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
+        await _events.AddAsync(evt);
+
+        await BuildUseCase().ExecuteAsync(evt.Id);
+
+        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.InvalidReference);
+        _reconciliations.All[0].ChargeId.Should().BeNull();
+    }
+
+    // --- Cenário 4b: PaymentWithoutCharge (sem identificador, fuzzy sem resultado) ---
+
+    [Fact]
+    public async Task Process_WithoutIdentifierAndNoFuzzyMatch_ResultIsPaymentWithoutCharge()
+    {
+        // Sem ExternalChargeId e sem ReferenceId: fuzzy por valor, mas nenhuma cobrança pendente.
+        var evt = PaymentEvent.Create(TestOrgId, "evt_002", null, null, 999m, DateTime.UtcNow, "FakeProvider", "{}");
         await _events.AddAsync(evt);
 
         await BuildUseCase().ExecuteAsync(evt.Id);

@@ -233,24 +233,24 @@ public sealed class ReconciliationEngine
                 ConfidenceLevel.High, match.Reason, match.MatchedField),
             charge);
     }
-}
 
-// ── Value object interno ──────────────────────────────────────────────────────
+    // ── Value object interno ──────────────────────────────────────────────────
 
-file sealed record MatchResult
-{
-    public Charge?              Charge       { get; init; }
-    public IReadOnlyList<Charge> Candidates  { get; init; } = [];
-    public ConfidenceLevel      Confidence   { get; init; }
-    public MatchReason          Reason       { get; init; }
-    public string?              MatchedField { get; init; }
+    private sealed record MatchResult
+    {
+        public Charge?               Charge       { get; init; }
+        public IReadOnlyList<Charge> Candidates   { get; init; } = [];
+        public ConfidenceLevel       Confidence   { get; init; }
+        public MatchReason           Reason       { get; init; }
+        public string?               MatchedField { get; init; }
 
-    public static MatchResult Found(Charge charge, ConfidenceLevel confidence, MatchReason reason, string field)
-        => new() { Charge = charge, Confidence = confidence, Reason = reason, MatchedField = field };
+        public static MatchResult Found(Charge charge, ConfidenceLevel confidence, MatchReason reason, string field)
+            => new() { Charge = charge, Confidence = confidence, Reason = reason, MatchedField = field };
 
-    public static MatchResult Multiple(IReadOnlyList<Charge> candidates, MatchReason reason)
-        => new() { Candidates = candidates, Confidence = ConfidenceLevel.Low, Reason = reason };
+        public static MatchResult Multiple(IReadOnlyList<Charge> candidates, MatchReason reason)
+            => new() { Candidates = candidates, Confidence = ConfidenceLevel.Low, Reason = reason };
 
-    public static MatchResult NotFound(MatchReason reason)
-        => new() { Confidence = ConfidenceLevel.High, Reason = reason };
+        public static MatchResult NotFound(MatchReason reason)
+            => new() { Confidence = ConfidenceLevel.High, Reason = reason };
+    }
 }

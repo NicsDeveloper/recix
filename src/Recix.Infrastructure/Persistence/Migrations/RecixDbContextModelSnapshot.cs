@@ -366,9 +366,47 @@ namespace Recix.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
                         .HasColumnName("status");
+
+                    b.Property<string>("Confidence")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("confidence")
+                        .HasDefaultValue("High");
+
+                    b.Property<string>("MatchReason")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("match_reason")
+                        .HasDefaultValue("ExactExternalChargeId");
+
+                    b.Property<string?>("MatchedField")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("matched_field");
+
+                    b.Property<bool>("RequiresReview")
+                        .IsRequired()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requires_review");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<Guid?>("ReviewedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reviewed_by_user_id");
+
+                    b.Property<string?>("ReviewDecision")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("review_decision");
 
                     b.HasKey("Id");
 
@@ -380,6 +418,9 @@ namespace Recix.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PaymentEventId")
                         .HasDatabaseName("ix_reconciliation_results_payment_event_id");
+
+                    b.HasIndex("OrganizationId", "RequiresReview")
+                        .HasDatabaseName("ix_reconciliation_results_pending_review");
 
                     b.ToTable("reconciliation_results", (string)null);
                 });

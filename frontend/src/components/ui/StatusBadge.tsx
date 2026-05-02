@@ -8,6 +8,10 @@ const statusConfig: Record<AnyStatus, { label: string; className: string }> = {
     label: 'Pendente',
     className: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20',
   },
+  PendingReview: {
+    label: 'Aguardando revisão',
+    className: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+  },
   Paid: {
     label: 'Pago',
     className: 'bg-green-500/10 text-green-400 border border-green-500/20',
@@ -51,6 +55,18 @@ const statusConfig: Record<AnyStatus, { label: string; className: string }> = {
   Matched: {
     label: 'Conciliado',
     className: 'bg-green-500/10 text-green-400 border border-green-500/20',
+  },
+  MatchedLowConfidence: {
+    label: 'Revisar match',
+    className: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+  },
+  ChargeWithoutPayment: {
+    label: 'Venda sem pagamento',
+    className: 'bg-red-500/10 text-red-400 border border-red-500/20',
+  },
+  MultipleMatchCandidates: {
+    label: 'Múltiplos candidatos',
+    className: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
   },
   AmountMismatch: {
     label: 'Valor Divergente',
