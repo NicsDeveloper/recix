@@ -9,7 +9,6 @@ namespace Recix.Infrastructure.Repositories;
 
 public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization currentOrg) : IChargeRepository
 {
-    // Retorna apenas as charges da org atual (ou todas se contexto de sistema)
     private IQueryable<Charge> OrgQuery() =>
         currentOrg.OrganizationId.HasValue
             ? db.Charges.Where(c => c.OrganizationId == currentOrg.OrganizationId.Value)
@@ -28,7 +27,7 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
     {
         var start = date.Date.ToUniversalTime();
         var end   = start.AddDays(1);
-        // reference_id é único globalmente na tabela; a sequência diária precisa ser global
+        // reference_id é único globalmente; a sequência diária deve ser global
         // para evitar colisões entre organizações diferentes.
         return db.Charges.CountAsync(c => c.CreatedAt >= start && c.CreatedAt < end, ct);
     }
@@ -50,12 +49,34 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
            .Where(c => c.Status == ChargeStatus.Pending && c.ExpiresAt < DateTime.UtcNow)
            .ToListAsync(ct);
 
-    public Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken ct = default) =>
+    public Task<List<Charge>> FindPendingByAmountAsync(
+        decimal amount, Guid organizationId, CancellationToken ct = default) =>
         db.Charges
           .Where(c => c.OrganizationId == organizationId
                    && c.Status        == ChargeStatus.Pending
                    && c.Amount        == amount)
-          .OrderBy(c => c.CreatedAt)   // FIFO: oldest first
+          .OrderBy(c => c.CreatedAt)
+          .ToListAsync(ct);
+
+    public Task<List<Charge>> FindPendingByAmountAndDateRangeAsync(
+        decimal amount,
+        Guid organizationId,
+        DateTime from,
+        DateTime to,
+        CancellationToken ct = default) =>
+        db.Charges
+          .Where(c => c.OrganizationId == organizationId
+                   && c.Status        == ChargeStatus.Pending
+                   && c.Amount        == amount
+                   && c.CreatedAt     >= from
+                   && c.CreatedAt     <= to)
+          .OrderBy(c => c.CreatedAt)
+          .ToListAsync(ct);
+
+    public Task<List<Charge>> GetExpiredWithoutReconciliationAsync(CancellationToken ct = default) =>
+        OrgQuery()
+          .Where(c => c.Status == ChargeStatus.Expired
+                   && !db.ReconciliationResults.Any(r => r.ChargeId == c.Id))
           .ToListAsync(ct);
 
     public async Task<PagedResult<Charge>> ListAsync(

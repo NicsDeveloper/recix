@@ -266,6 +266,10 @@ public sealed class DashboardQueryService(
                 PaymentEventId    = pe?.EventId ?? r.PaymentEventId.ToString(),
                 Provider          = pe?.Provider,
                 CreatedAt         = r.CreatedAt,
+                Confidence        = r.Confidence.ToString(),
+                MatchReason       = r.MatchReason.ToString(),
+                MatchedField      = r.MatchedField,
+                RequiresReview    = r.RequiresReview,
             });
         }
         return result;

@@ -82,8 +82,16 @@ public sealed class ProcessPaymentEventUseCase
                 "PaymentEvent {PaymentEventId} reconciled as {Status}",
                 paymentEvent.Id, outcome.Result.Status);
 
+            // MatchedLowConfidence vai para a fila de revisão, não é alerta de erro.
+            // MultipleMatchCandidates também vai para revisão — usuário seleciona o candidato.
+            var isReviewItem = outcome.Result.Status is ReconciliationStatus.MatchedLowConfidence
+                                                     or ReconciliationStatus.MultipleMatchCandidates;
+
+            if (isReviewItem)
+                _broadcaster.Publish(RecixEvent.PendingReviewCreated(outcome.Result.Id, paymentEvent.OrganizationId));
+
             // Notificação proativa de divergências (best-effort, nunca bloqueia)
-            if (outcome.Result.Status != ReconciliationStatus.Matched)
+            if (!isReviewItem && outcome.Result.Status != ReconciliationStatus.Matched)
             {
                 await _alertNotifier.NotifyAsync(
                     orgId:          paymentEvent.OrganizationId,

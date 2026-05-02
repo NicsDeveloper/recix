@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Download, Sparkles, GitMerge, ArrowRight,
   CheckCircle, AlertTriangle, Copy, Clock, Ban,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   MoreVertical, Zap, CreditCard, Banknote, SlidersHorizontal,
-  Calendar,
+  Calendar, Eye, X, ThumbsUp, ThumbsDown, Info,
 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -17,7 +17,7 @@ import { reconciliationsService } from '../services/reconciliationsService'
 import { AiExplanationModal } from '../components/modals/AiExplanationModal'
 import { LoadingState } from '../components/ui/LoadingState'
 import { formatCurrency } from '../lib/formatters'
-import type { RecentReconciliation, ReconciliationStatus, FluxPoint } from '../types'
+import type { RecentReconciliation, ReconciliationStatus, FluxPoint, PendingReviewItem } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -352,6 +352,311 @@ function FilterSelect({ label, value, options, onChange }: {
   )
 }
 
+// ─── Match Reason Labels ───────────────────────────────────────────────────────
+
+const MATCH_REASON_LABEL: Record<string, string> = {
+  ExactExternalChargeId:  'ID externo da cobrança (exato)',
+  ExactReferenceId:       'Código de referência (exato)',
+  ValueWithinTimeWindow:  'Valor + janela de 48h',
+  ValueFifo:              'Valor + FIFO (sem identificador)',
+  NoMatch:                'Nenhum candidato encontrado',
+  AlreadySettled:         'Cobrança já conciliada',
+  InvalidReference:       'Identificador não encontrado',
+  MultipleCandidates:     'Múltiplos candidatos — seleção manual necessária',
+  FoundWithAmountMismatch:'Cobrança encontrada, valor diferente',
+  FoundButExpired:        'Cobrança encontrada, mas expirada',
+}
+
+const CONFIDENCE_LABEL: Record<string, { label: string; color: string }> = {
+  High:   { label: 'Alta confiança',   color: 'text-green-400' },
+  Medium: { label: 'Média confiança',  color: 'text-amber-400' },
+  Low:    { label: 'Baixa confiança',  color: 'text-red-400'   },
+}
+
+// ─── Match Trail (trilha de raciocínio do sistema) ─────────────────────────────
+
+function MatchTrail({ item }: { item: PendingReviewItem }) {
+  const steps = [
+    { field: 'ExternalChargeId', tried: true,  success: item.matchReason === 'ExactExternalChargeId' },
+    { field: 'ReferenceId',      tried: true,  success: item.matchReason === 'ExactReferenceId' },
+    { field: 'Valor + 48h',      tried: item.matchReason !== 'ExactExternalChargeId' && item.matchReason !== 'ExactReferenceId',
+                                  success: item.matchReason === 'ValueWithinTimeWindow' },
+    { field: 'Valor + FIFO',     tried: item.matchReason === 'ValueFifo' || item.matchReason === 'MultipleCandidates',
+                                  success: item.matchReason === 'ValueFifo' },
+  ]
+
+  return (
+    <div className="space-y-2">
+      {steps.map((s, i) => (
+        <div key={i} className="flex items-center gap-2 text-xs">
+          <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${
+            !s.tried ? 'bg-gray-800 text-gray-600' :
+            s.success ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+            'bg-gray-800/60 text-gray-500'
+          }`}>
+            {!s.tried ? '·' : s.success ? '✓' : '✗'}
+          </span>
+          <span className={s.tried ? (s.success ? 'text-green-400 font-medium' : 'text-gray-500') : 'text-gray-700'}>
+            {s.field}
+          </span>
+          {s.success && (
+            <span className="text-gray-600 text-[10px]">← usado neste match</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Review Panel (slide-over) ────────────────────────────────────────────────
+
+function ReviewPanel({
+  item,
+  onClose,
+  onConfirm,
+  onReject,
+  isSubmitting,
+}: {
+  item: PendingReviewItem
+  onClose: () => void
+  onConfirm: () => void
+  onReject: () => void
+  isSubmitting: boolean
+}) {
+  const confidence = CONFIDENCE_LABEL[item.confidence] ?? { label: item.confidence, color: 'text-gray-400' }
+  const diff = item.expectedAmount != null ? item.paidAmount - item.expectedAmount : null
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-gray-900 border-l border-gray-700 shadow-2xl z-50 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+          <div className="flex items-center gap-2">
+            <Eye size={16} className="text-amber-400" />
+            <h2 className="text-sm font-semibold text-gray-200">Revisar conciliação</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* Status e confiança */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <p className="text-xs font-semibold text-amber-400 mb-1">Match de baixa confiança</p>
+            <p className={`text-sm font-bold ${confidence.color}`}>{confidence.label}</p>
+            <p className="text-xs text-gray-500 mt-1">{item.reason}</p>
+          </div>
+
+          {/* Valores */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Valores</p>
+            <div className="rounded-xl border border-gray-800 bg-gray-800/50 divide-y divide-gray-800">
+              <div className="flex justify-between px-4 py-2.5 text-sm">
+                <span className="text-gray-400">Esperado</span>
+                <span className="font-semibold text-gray-200 tabular-nums">
+                  {item.expectedAmount != null ? formatCurrency(item.expectedAmount) : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between px-4 py-2.5 text-sm">
+                <span className="text-gray-400">Recebido</span>
+                <span className="font-semibold text-gray-200 tabular-nums">{formatCurrency(item.paidAmount)}</span>
+              </div>
+              {diff != null && (
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-gray-400">Diferença</span>
+                  <span className={`font-bold tabular-nums ${diff === 0 ? 'text-green-400' : diff > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+                    {diff > 0 ? '+' : ''}{formatCurrency(diff)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Trilha de matching */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Info size={13} className="text-gray-500" />
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Como o sistema tentou casar</p>
+            </div>
+            <div className="rounded-xl border border-gray-800 bg-gray-800/50 p-4">
+              <MatchTrail item={item} />
+              <div className="mt-3 pt-3 border-t border-gray-800">
+                <p className="text-xs text-gray-500">Campo usado:</p>
+                <p className="text-xs text-amber-400 font-medium mt-0.5">
+                  {MATCH_REASON_LABEL[item.matchReason] ?? item.matchReason}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* O que significa cada ação */}
+          <div className="rounded-xl border border-gray-800 bg-gray-800/30 p-4 space-y-2">
+            <p className="text-xs font-semibold text-gray-400 mb-2">O que cada ação faz:</p>
+            <div className="flex items-start gap-2 text-xs text-gray-500">
+              <ThumbsUp size={12} className="text-green-400 mt-0.5 flex-shrink-0" />
+              <span><span className="text-green-400 font-medium">Confirmar</span> — o match se torna definitivo e a venda é marcada como paga.</span>
+            </div>
+            <div className="flex items-start gap-2 text-xs text-gray-500">
+              <ThumbsDown size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
+              <span><span className="text-red-400 font-medium">Rejeitar</span> — o match é descartado, a venda volta a pendente e o pagamento é reprocessado.</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Ações */}
+        <div className="p-5 border-t border-gray-800 flex gap-3">
+          <button
+            onClick={onReject}
+            disabled={isSubmitting}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-red-400 border border-red-500/25 bg-red-500/5 rounded-xl hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          >
+            <ThumbsDown size={14} /> Rejeitar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isSubmitting}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-green-400 border border-green-500/25 bg-green-500/8 rounded-xl hover:bg-green-500/15 transition-colors disabled:opacity-50"
+          >
+            <ThumbsUp size={14} /> Confirmar
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─── Pending Review Tab ────────────────────────────────────────────────────────
+
+function PendingReviewTab() {
+  const queryClient = useQueryClient()
+  const [selected, setSelected] = useState<PendingReviewItem | null>(null)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['pending-review'],
+    queryFn:  () => reconciliationsService.getPendingReview(),
+    staleTime: 30_000,
+  })
+
+  const confirm = useMutation({
+    mutationFn: (id: string) => reconciliationsService.confirmMatch(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      setSelected(null)
+    },
+  })
+
+  const reject = useMutation({
+    mutationFn: (id: string) => reconciliationsService.rejectMatch(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      setSelected(null)
+    },
+  })
+
+  const isSubmitting = confirm.isPending || reject.isPending
+  const items = data?.items ?? []
+
+  if (isLoading) return <LoadingState />
+
+  return (
+    <div>
+      {selected && (
+        <ReviewPanel
+          item={selected}
+          onClose={() => setSelected(null)}
+          onConfirm={() => confirm.mutate(selected.id)}
+          onReject={() => reject.mutate(selected.id)}
+          isSubmitting={isSubmitting}
+        />
+      )}
+
+      {items.length === 0 ? (
+        <div className="rounded-2xl border border-gray-800 bg-gray-900 p-12 text-center">
+          <CheckCircle size={32} className="mx-auto text-green-400 mb-3" />
+          <p className="text-sm font-semibold text-gray-200 mb-1">Nenhum item pendente</p>
+          <p className="text-xs text-gray-500">Todas as conciliações estão resolvidas. O período pode ser fechado.</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-800 bg-amber-500/5">
+            <Eye size={15} className="text-amber-400" />
+            <div>
+              <h2 className="text-sm font-semibold text-gray-200">
+                {items.length} item{items.length !== 1 ? 's' : ''} pendente{items.length !== 1 ? 's' : ''}
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">Ordenado por valor — maior impacto financeiro primeiro</p>
+            </div>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800">
+                {['TIPO', 'CONFIANÇA', 'CAMPO USADO', 'ESPERADO', 'RECEBIDO', 'DIFERENÇA', 'DATA', 'AÇÃO'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => {
+                const conf = CONFIDENCE_LABEL[item.confidence] ?? { label: item.confidence, color: 'text-gray-400' }
+                const diff = item.expectedAmount != null ? item.paidAmount - item.expectedAmount : null
+
+                return (
+                  <tr key={item.id} className="border-b border-gray-800/50 hover:bg-gray-800/25 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-amber-400 font-medium">
+                        {item.status === 'MultipleMatchCandidates' ? 'Múltiplos candidatos' : 'Match incerto'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs font-medium ${conf.color}`}>{conf.label}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[150px] truncate" title={MATCH_REASON_LABEL[item.matchReason]}>
+                      {item.matchedField ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
+                      {item.expectedAmount != null ? formatCurrency(item.expectedAmount) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums">
+                      {formatCurrency(item.paidAmount)}
+                    </td>
+                    <td className="px-4 py-3 text-xs tabular-nums">
+                      {diff == null ? <span className="text-gray-600">—</span>
+                        : diff === 0 ? <span className="text-green-400 font-bold">{formatCurrency(0)}</span>
+                        : <span className={`font-bold ${diff > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+                            {diff > 0 ? '+' : ''}{formatCurrency(diff)}
+                          </span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                      {new Date(item.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setSelected(item)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-400 border border-amber-500/25 bg-amber-500/8 rounded-lg hover:bg-amber-500/15 transition-colors whitespace-nowrap"
+                      >
+                        <Eye size={11} /> Revisar
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 type Tab = 'overview' | 'by-charge' | 'by-event'
@@ -372,7 +677,8 @@ const DIVERGENT_STATUSES: ReconciliationStatus[] = [
 
 export function ReconciliationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [tab, setTab]               = useState<Tab>('overview')
+  const tabParam = searchParams.get('tab') as Tab | 'review' | null
+  const [tab, setTab] = useState<Tab | 'review'>(tabParam === 'review' ? 'review' : 'overview')
   const [fromDate, setFromDate]     = useState(sevenDaysAgoISO)
   const [toDate, setToDate]         = useState(todayISO)
   const [page, setPage]             = useState(1)
@@ -400,6 +706,13 @@ export function ReconciliationsPage() {
     queryFn:  () => dashboardService.getClosingReport({ fromDate, toDate }),
     staleTime: 20_000,
   })
+
+  const { data: pendingReviewData } = useQuery({
+    queryKey: ['pending-review'],
+    queryFn:  () => reconciliationsService.getPendingReview(),
+    staleTime: 30_000,
+  })
+  const pendingCount = pendingReviewData?.totalCount ?? 0
 
   const isDivergentMode = filterParam === 'divergent' && !statusParam
   const effectiveStatus = isDivergentMode ? undefined : (statusFilter || undefined)
@@ -529,18 +842,35 @@ export function ReconciliationsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
-        {([
-          { id: 'overview',   label: 'Visão geral' },
-          { id: 'by-charge',  label: 'Por cobrança' },
-          { id: 'by-event',   label: 'Por evento' },
-        ] as const).map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
-            {t.label}
-          </button>
-        ))}
+        <button onClick={() => setTab('overview')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'overview' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
+          Visão geral
+        </button>
+        <button onClick={() => setTab('by-charge')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'by-charge' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
+          Por cobrança
+        </button>
+        <button onClick={() => setTab('by-event')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'by-event' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
+          Por evento
+        </button>
+        <button onClick={() => setTab('review')}
+          className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${tab === 'review' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'}`}>
+          <Eye size={13} />
+          Revisão
+          {(pendingCount) > 0 && (
+            <span className={`flex items-center justify-center min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-bold ${tab === 'review' ? 'bg-white/25 text-white' : 'bg-amber-500/20 border border-amber-500/30 text-amber-400'}`}>
+              {pendingCount}
+            </span>
+          )}
+        </button>
       </div>
 
+      {/* Aba de revisão — mostra componente próprio e encerra o render */}
+      {tab === 'review' && <PendingReviewTab />}
+
+      {/* Filter bar — só visível nas abas normais */}
+      {tab !== 'review' && <>
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Date range */}
@@ -623,6 +953,7 @@ export function ReconciliationsPage() {
           onClose={() => setAiTarget(null)}
         />
       )}
+      </>}
     </div>
   )
 }

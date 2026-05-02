@@ -9,7 +9,8 @@ public sealed record RecixEvent(string Type, string? EntityId = null, Guid? OrgI
     public static RecixEvent ChargeUpdated(Guid id, Guid orgId)        => new("charge.updated",        id.ToString(), orgId);
     public static RecixEvent PaymentEventUpdated(Guid id, Guid orgId)  => new("payment_event.updated", id.ToString(), orgId);
     public static RecixEvent ReconciliationCreated(Guid id, Guid orgId)=> new("reconciliation.created",id.ToString(), orgId);
-    public static RecixEvent ChargesExpired(int count, Guid orgId)     => new("charges.expired",       count.ToString(), orgId);
+    public static RecixEvent ChargesExpired(int count, Guid orgId)      => new("charges.expired",         count.ToString(), orgId);
+    public static RecixEvent PendingReviewCreated(Guid id, Guid orgId)  => new("pending_review.created",  id.ToString(),    orgId);
     public static RecixEvent JoinRequestReviewed(Guid requestId, Guid userId, bool accepted)
         => new("join_request.reviewed", requestId.ToString(), null, userId) { Accepted = accepted };
 

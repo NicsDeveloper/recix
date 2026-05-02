@@ -23,6 +23,22 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task UpdateAsync(ReconciliationResult result, CancellationToken ct = default)
+    {
+        db.ReconciliationResults.Update(result);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await db.ReconciliationResults.FindAsync([id], ct);
+        if (entity is not null)
+        {
+            db.ReconciliationResults.Remove(entity);
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
     public async Task<PagedResult<ReconciliationResult>> ListAsync(
         ReconciliationStatus? status,
         Guid? chargeId,
@@ -33,8 +49,8 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
     {
         var query = OrgQuery();
 
-        if (status.HasValue)       query = query.Where(r => r.Status == status.Value);
-        if (chargeId.HasValue)     query = query.Where(r => r.ChargeId == chargeId.Value);
+        if (status.HasValue)         query = query.Where(r => r.Status == status.Value);
+        if (chargeId.HasValue)       query = query.Where(r => r.ChargeId == chargeId.Value);
         if (paymentEventId.HasValue) query = query.Where(r => r.PaymentEventId == paymentEventId.Value);
 
         var total = await query.CountAsync(ct);
@@ -54,13 +70,22 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
             .OrderBy(r => r.CreatedAt)
             .ToListAsync(ct);
 
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        var entity = await db.ReconciliationResults.FindAsync([id], ct);
-        if (entity is not null)
-        {
-            db.ReconciliationResults.Remove(entity);
-            await db.SaveChangesAsync(ct);
-        }
-    }
+    public async Task<IReadOnlyList<ReconciliationResult>> GetPendingReviewAsync(
+        Guid organizationId, CancellationToken ct = default) =>
+        await db.ReconciliationResults
+            .Where(r => r.OrganizationId == organizationId
+                     && r.RequiresReview
+                     && r.ReviewDecision == null)
+            .OrderByDescending(r => r.PaidAmount)  // maior impacto financeiro primeiro
+            .ToListAsync(ct);
+
+    public Task<int> CountPendingReviewAsync(Guid organizationId, CancellationToken ct = default) =>
+        db.ReconciliationResults.CountAsync(
+            r => r.OrganizationId == organizationId
+              && r.RequiresReview
+              && r.ReviewDecision == null,
+            ct);
+
+    public Task<bool> HasReconciliationForChargeAsync(Guid chargeId, CancellationToken ct = default) =>
+        db.ReconciliationResults.AnyAsync(r => r.ChargeId == chargeId, ct);
 }

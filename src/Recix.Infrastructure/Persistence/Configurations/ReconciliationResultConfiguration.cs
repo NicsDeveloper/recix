@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Recix.Domain.Entities;
+using Recix.Domain.Enums;
 
 namespace Recix.Infrastructure.Persistence.Configurations;
 
@@ -29,7 +30,7 @@ public sealed class ReconciliationResultConfiguration : IEntityTypeConfiguration
 
         builder.Property(r => r.Status)
             .HasColumnName("status")
-            .HasMaxLength(30)
+            .HasMaxLength(40)
             .HasConversion<string>()
             .IsRequired();
 
@@ -51,10 +52,52 @@ public sealed class ReconciliationResultConfiguration : IEntityTypeConfiguration
             .HasColumnName("created_at")
             .IsRequired();
 
+        // ── Campos de confiança e matching ────────────────────────────────────────
+
+        builder.Property(r => r.Confidence)
+            .HasColumnName("confidence")
+            .HasMaxLength(10)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasDefaultValue(ConfidenceLevel.High);
+
+        builder.Property(r => r.MatchReason)
+            .HasColumnName("match_reason")
+            .HasMaxLength(40)
+            .HasConversion<string>()
+            .IsRequired()
+            .HasDefaultValue(MatchReason.ExactExternalChargeId);
+
+        builder.Property(r => r.MatchedField)
+            .HasColumnName("matched_field")
+            .HasMaxLength(50);
+
+        builder.Property(r => r.RequiresReview)
+            .HasColumnName("requires_review")
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        // ── Auditoria de revisão ──────────────────────────────────────────────────
+
+        builder.Property(r => r.ReviewedAt)
+            .HasColumnName("reviewed_at");
+
+        builder.Property(r => r.ReviewedByUserId)
+            .HasColumnName("reviewed_by_user_id");
+
+        builder.Property(r => r.ReviewDecision)
+            .HasColumnName("review_decision")
+            .HasMaxLength(20);
+
+        // ── Índices ───────────────────────────────────────────────────────────────
+
         builder.HasIndex(r => r.ChargeId)
             .HasDatabaseName("ix_reconciliation_results_charge_id");
 
         builder.HasIndex(r => r.PaymentEventId)
             .HasDatabaseName("ix_reconciliation_results_payment_event_id");
+
+        builder.HasIndex(r => new { r.OrganizationId, r.RequiresReview })
+            .HasDatabaseName("ix_reconciliation_results_pending_review");
     }
 }

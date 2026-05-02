@@ -36,6 +36,18 @@ public static class OrganizationEndpoints
             .Produces<List<OrgSearchDto>>()
             .AllowAnonymous();
 
+        group.MapPost("/setup/create", SetupCreateOrg)
+            .WithName("SetupCreateOrg")
+            .WithSummary("Cria uma nova organização para o usuário autenticado sem org")
+            .Produces<AuthResponse>()
+            .RequireAuthorization();
+
+        group.MapPost("/setup/join", SetupJoinOrg)
+            .WithName("SetupJoinOrg")
+            .WithSummary("Solicita entrada em uma organização existente")
+            .Produces<AuthResponse>()
+            .RequireAuthorization();
+
         group.MapGet("/members", GetMembers)
             .WithName("GetOrganizationMembers")
             .WithSummary("Lista membros da organização atual")
@@ -153,6 +165,31 @@ public static class OrganizationEndpoints
             MemberCount = r.MemberCount,
         }).ToList());
     }
+
+    private static async Task<IResult> SetupCreateOrg(
+        [FromBody] SetupCreateOrgBody body,
+        HttpContext ctx,
+        OrgSetupUseCase useCase,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(ctx);
+        var result = await useCase.CreateOrgAsync(userId, body.OrgName, ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> SetupJoinOrg(
+        [FromBody] SetupJoinOrgBody body,
+        HttpContext ctx,
+        OrgSetupUseCase useCase,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(ctx);
+        var result = await useCase.RequestJoinAsync(userId, body.OrgId, body.Message, ct);
+        return Results.Ok(result);
+    }
+
+    private sealed record SetupCreateOrgBody(string OrgName);
+    private sealed record SetupJoinOrgBody(Guid OrgId, string? Message);
 
     private static async Task<IResult> GetMembers(
         HttpContext ctx,

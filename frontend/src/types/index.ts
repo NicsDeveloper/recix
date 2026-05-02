@@ -94,6 +94,29 @@ export interface RecentReconciliation {
   paymentEventId: string
   provider: string | null
   createdAt: string
+  confidence: 'High' | 'Medium' | 'Low'
+  matchReason: string
+  matchedField: string | null
+  requiresReview: boolean
+}
+
+export interface PendingReviewItem {
+  id: string
+  status: string
+  confidence: 'High' | 'Medium' | 'Low'
+  matchReason: string
+  matchedField: string | null
+  reason: string
+  chargeId: string | null
+  paymentEventId: string | null
+  expectedAmount: number | null
+  paidAmount: number
+  createdAt: string
+}
+
+export interface PendingReviewList {
+  totalCount: number
+  items: PendingReviewItem[]
 }
 
 export interface RecentPaymentEvent {

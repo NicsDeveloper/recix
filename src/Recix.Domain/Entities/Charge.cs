@@ -57,19 +57,19 @@ public sealed class Charge
 
     public void MarkAsPaid()
     {
-        if (Status != ChargeStatus.Pending)
+        if (Status is not (ChargeStatus.Pending or ChargeStatus.PendingReview or ChargeStatus.Divergent))
             throw new DomainException($"Cannot mark a {Status} charge as Paid.");
 
-        Status = ChargeStatus.Paid;
+        Status    = ChargeStatus.Paid;
         UpdatedAt = DateTime.UtcNow;
     }
 
     public void MarkAsDivergent()
     {
-        if (Status != ChargeStatus.Pending && Status != ChargeStatus.Expired)
+        if (Status is not (ChargeStatus.Pending or ChargeStatus.Expired or ChargeStatus.PendingReview))
             throw new DomainException($"Cannot mark a {Status} charge as Divergent.");
 
-        Status = ChargeStatus.Divergent;
+        Status    = ChargeStatus.Divergent;
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -78,7 +78,30 @@ public sealed class Charge
         if (Status != ChargeStatus.Pending)
             throw new DomainException($"Cannot mark a {Status} charge as Expired.");
 
-        Status = ChargeStatus.Expired;
+        Status    = ChargeStatus.Expired;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Reserva a cobrança para um match de baixa confiança que aguarda revisão humana.
+    /// Impede que o fuzzy matching a reutilize enquanto está em análise.
+    /// </summary>
+    public void MarkAsPendingReview()
+    {
+        if (Status != ChargeStatus.Pending)
+            throw new DomainException($"Cannot put a {Status} charge in PendingReview.");
+
+        Status    = ChargeStatus.PendingReview;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Usuário rejeitou o match — a cobrança volta a Pending para novo matching.</summary>
+    public void RevertToPending()
+    {
+        if (Status != ChargeStatus.PendingReview)
+            throw new DomainException($"Cannot revert a {Status} charge to Pending.");
+
+        Status    = ChargeStatus.Pending;
         UpdatedAt = DateTime.UtcNow;
     }
 }

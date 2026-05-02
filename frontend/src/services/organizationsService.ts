@@ -1,5 +1,5 @@
 import { http } from '../lib/http'
-import type { JoinRequestDto, MemberDto, OrgSearchDto } from '../types'
+import type { AuthResponse, JoinRequestDto, MemberDto, OrgSearchDto } from '../types'
 
 export const organizationsService = {
   async getMembers(): Promise<MemberDto[]> {
@@ -14,6 +14,16 @@ export const organizationsService = {
 
   async removeMember(userId: string): Promise<void> {
     await http.delete(`/organizations/members/${userId}`)
+  },
+
+  async setupCreate(orgName: string): Promise<AuthResponse> {
+    const { data } = await http.post<AuthResponse>('/organizations/setup/create', { orgName })
+    return data
+  },
+
+  async setupJoin(orgId: string, message?: string): Promise<AuthResponse> {
+    const { data } = await http.post<AuthResponse>('/organizations/setup/join', { orgId, message })
+    return data
   },
   async search(q: string): Promise<OrgSearchDto[]> {
     const { data } = await http.get<OrgSearchDto[]>('/organizations/search', { params: { q } })

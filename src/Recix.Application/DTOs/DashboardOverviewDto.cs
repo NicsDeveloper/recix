@@ -31,15 +31,44 @@ public sealed class FluxSeriesPointDto
 
 public sealed class RecentReconciliationDto
 {
-    public Guid Id { get; init; }
-    public string Status { get; init; } = default!;
-    public string Reason { get; init; } = default!;
+    public Guid     Id               { get; init; }
+    public string   Status           { get; init; } = default!;
+    public string   Reason           { get; init; } = default!;
+    public decimal? ExpectedAmount   { get; init; }
+    public decimal  PaidAmount       { get; init; }
+    public string?  ChargeReferenceId { get; init; }
+    public string   PaymentEventId   { get; init; } = default!;
+    public string?  Provider         { get; init; }
+    public DateTime CreatedAt        { get; init; }
+
+    // ── Campos de confiança (novos) ───────────────────────────────────────────────
+    public string   Confidence       { get; init; } = "High";
+    public string   MatchReason      { get; init; } = "ExactExternalChargeId";
+    public string?  MatchedField     { get; init; }
+    public bool     RequiresReview   { get; init; }
+}
+
+// ── DTOs de pendentes de revisão ─────────────────────────────────────────────
+
+public sealed class PendingReviewListDto
+{
+    public int TotalCount { get; init; }
+    public List<PendingReviewItemDto> Items { get; init; } = [];
+}
+
+public sealed class PendingReviewItemDto
+{
+    public Guid     Id             { get; init; }
+    public string   Status         { get; init; } = default!;
+    public string   Confidence     { get; init; } = default!;
+    public string   MatchReason    { get; init; } = default!;
+    public string?  MatchedField   { get; init; }
+    public string   Reason         { get; init; } = default!;
+    public Guid?    ChargeId       { get; init; }
+    public Guid?    PaymentEventId { get; init; }
     public decimal? ExpectedAmount { get; init; }
-    public decimal PaidAmount { get; init; }
-    public string? ChargeReferenceId { get; init; }
-    public string PaymentEventId { get; init; } = default!;
-    public string? Provider { get; init; }
-    public DateTime CreatedAt { get; init; }
+    public decimal  PaidAmount     { get; init; }
+    public DateTime CreatedAt      { get; init; }
 }
 
 public sealed class RecentPaymentEventDto

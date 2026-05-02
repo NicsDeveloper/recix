@@ -87,10 +87,12 @@ function handleEvent(
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       break
 
+    case 'pending_review.created':
+      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      break
+
     case 'join_request.reviewed':
-      // Atualiza a sessão do usuário que estava aguardando aprovação.
-      // refreshAuth busca novo JWT com org_id e atualiza o AuthContext —
-      // o App.tsx re-renderiza e redireciona automaticamente para a dashboard.
       refreshAuth()
       queryClient.invalidateQueries({ queryKey: ['join-requests'] })
       break

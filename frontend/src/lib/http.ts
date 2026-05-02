@@ -33,6 +33,16 @@ http.interceptors.response.use(
     const { status, data } = error.response as { status: number; data: unknown }
 
     if (status === 401) {
+      const url = error.config?.url ?? ''
+      const isAuthEndpoint = ['/auth/login', '/auth/register', '/auth/google', '/auth/refresh'].some(p => url.includes(p))
+
+      if (isAuthEndpoint) {
+        // Falha de credencial — repassa a mensagem da API diretamente
+        const body = data as { message?: string; title?: string } | string
+        const msg = typeof body === 'string' ? body : (body?.message ?? body?.title ?? 'E-mail ou senha incorretos.')
+        return Promise.reject(new Error(msg))
+      }
+
       // Token expirado ou inválido — limpa sessão e redireciona para login
       localStorage.removeItem('recix_token')
       localStorage.removeItem('recix_user')

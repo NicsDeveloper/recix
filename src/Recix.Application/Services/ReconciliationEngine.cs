@@ -6,153 +6,251 @@ namespace Recix.Application.Services;
 
 public sealed record ReconciliationOutcome(ReconciliationResult Result, Charge? Charge);
 
+/// <summary>
+/// Estratégia de matching (em ordem decrescente de confiança):
+///   1. ExternalChargeId exato           → HIGH confidence
+///   2. ReferenceId exato                → HIGH confidence
+///   3. Valor + janela ±48h, 1 candidato → MEDIUM confidence (RequiresReview)
+///   4. Valor + FIFO, 1 candidato        → LOW confidence   (RequiresReview)
+///   Múltiplos candidatos em 3 ou 4      → MultipleMatchCandidates (RequiresReview)
+///   ReferenceId informado mas não existe → InvalidReference (sem fallback)
+/// </summary>
 public sealed class ReconciliationEngine
 {
+    private static readonly TimeSpan MatchWindow = TimeSpan.FromHours(48);
+
     private readonly IChargeRepository _charges;
 
     public ReconciliationEngine(IChargeRepository charges) => _charges = charges;
 
-    public async Task<ReconciliationOutcome> ReconcileAsync(PaymentEvent paymentEvent, CancellationToken cancellationToken = default)
+    public async Task<ReconciliationOutcome> ReconcileAsync(
+        PaymentEvent paymentEvent,
+        CancellationToken ct = default)
     {
-        var charge = await FindChargeAsync(paymentEvent, cancellationToken);
-
-        if (charge is null)
-        {
-            var status = DetermineNoChargeStatus(paymentEvent);
-            var reason = status == ReconciliationStatus.InvalidReference
-                ? "Sem identificador de cobrança e sem cobranças pendentes com este valor para correspondência automática."
-                : "Nenhuma cobrança encontrada para este pagamento.";
-
-            var result = ReconciliationResult.Create(
-                paymentEvent.OrganizationId,
-                null, paymentEvent.Id,
-                status, reason,
-                null, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, null);
-        }
-
-        var orgId = paymentEvent.OrganizationId;
-
-        // Duplicate: charge already Paid → definitive duplicate
-        if (charge.Status == ChargeStatus.Paid)
-        {
-            var result = ReconciliationResult.Create(
-                orgId, charge.Id, paymentEvent.Id,
-                ReconciliationStatus.DuplicatePayment,
-                "Cobrança já conciliada. Pagamento duplicado.",
-                charge.Amount, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, null);
-        }
-
-        // Divergent + correct amount → re-reconcile (overrides previous AmountMismatch)
-        if (charge.Status == ChargeStatus.Divergent && paymentEvent.PaidAmount == charge.Amount)
-        {
-            charge.MarkAsPaid();
-            var result = ReconciliationResult.Create(
-                orgId, charge.Id, paymentEvent.Id,
-                ReconciliationStatus.Matched,
-                "Re-conciliado com sucesso após pagamento com valor correto.",
-                charge.Amount, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, charge);
-        }
-
-        // Divergent + still wrong amount → duplicate divergence
-        if (charge.Status == ChargeStatus.Divergent)
-        {
-            var result = ReconciliationResult.Create(
-                orgId, charge.Id, paymentEvent.Id,
-                ReconciliationStatus.DuplicatePayment,
-                $"Cobrança já marcada como divergente. Novo pagamento ({paymentEvent.PaidAmount:F2}) também diverge do esperado ({charge.Amount:F2}).",
-                charge.Amount, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, null);
-        }
-
-        // Expired charge (takes priority over amount check)
-        if (charge.IsExpired())
-        {
-            charge.MarkAsDivergent();
-            var result = ReconciliationResult.Create(
-                orgId, charge.Id, paymentEvent.Id,
-                ReconciliationStatus.ExpiredChargePaid,
-                $"Cobrança expirou em {charge.ExpiresAt:O}. Pagamento recebido após o prazo.",
-                charge.Amount, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, charge);
-        }
-
-        // Amount mismatch
-        if (paymentEvent.PaidAmount != charge.Amount)
-        {
-            charge.MarkAsDivergent();
-            var result = ReconciliationResult.Create(
-                orgId, charge.Id, paymentEvent.Id,
-                ReconciliationStatus.AmountMismatch,
-                $"Valor pago {paymentEvent.PaidAmount:F2} diverge do esperado {charge.Amount:F2}.",
-                charge.Amount, paymentEvent.PaidAmount);
-
-            return new ReconciliationOutcome(result, charge);
-        }
-
-        // Happy path: matched
-        charge.MarkAsPaid();
-        var matched = ReconciliationResult.Create(
-            orgId, charge.Id, paymentEvent.Id,
-            ReconciliationStatus.Matched,
-            "Pagamento conciliado com sucesso.",
-            charge.Amount, paymentEvent.PaidAmount);
-
-        return new ReconciliationOutcome(matched, charge);
+        var match = await FindMatchAsync(paymentEvent, ct);
+        return await BuildOutcomeAsync(paymentEvent, match, ct);
     }
 
     // ── Lookup ──────────────────────────────────────────────────────────────────
 
-    private async Task<Charge?> FindChargeAsync(PaymentEvent paymentEvent, CancellationToken ct)
+    private async Task<MatchResult> FindMatchAsync(PaymentEvent evt, CancellationToken ct)
     {
-        // 1. Exact match by ExternalChargeId
-        if (!string.IsNullOrWhiteSpace(paymentEvent.ExternalChargeId))
+        // 1. ExternalChargeId — se informado, tenta; não faz fallback se não achar
+        if (!string.IsNullOrWhiteSpace(evt.ExternalChargeId))
         {
-            var c = await _charges.GetByExternalIdAsync(paymentEvent.ExternalChargeId, ct);
-            if (c is not null) return c;
+            var c = await _charges.GetByExternalIdAsync(evt.ExternalChargeId, ct);
+            return c is not null
+                ? MatchResult.Found(c, ConfidenceLevel.High, MatchReason.ExactExternalChargeId, "ExternalChargeId")
+                : MatchResult.NotFound(MatchReason.InvalidReference);
         }
 
-        // 2. Exact match by ReferenceId
-        if (!string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
+        // 2. ReferenceId — se informado, tenta; não faz fallback se não achar
+        if (!string.IsNullOrWhiteSpace(evt.ReferenceId))
         {
-            var c = await _charges.GetByReferenceIdAsync(paymentEvent.ReferenceId, ct);
-            if (c is not null) return c;
+            var c = await _charges.GetByReferenceIdAsync(evt.ReferenceId, ct);
+            return c is not null
+                ? MatchResult.Found(c, ConfidenceLevel.High, MatchReason.ExactReferenceId, "ReferenceId")
+                : MatchResult.NotFound(MatchReason.InvalidReference);
         }
 
-        // 3. Fuzzy match by amount (only when org is known and no identifier was provided)
-        //    Usada quando o extrato bancário (OFX/CSV) não carrega referência da venda.
-        //    Pega a cobrança pendente mais antiga com o mesmo valor (FIFO).
-        if (paymentEvent.OrganizationId != Guid.Empty)
-        {
-            var candidates = await _charges.FindPendingByAmountAsync(
-                paymentEvent.PaidAmount, paymentEvent.OrganizationId, ct);
+        // Sem identificador — só tenta fuzzy se há contexto de organização
+        if (evt.OrganizationId == Guid.Empty)
+            return MatchResult.NotFound(MatchReason.NoMatch);
 
-            if (candidates.Count > 0)
-                return candidates[0]; // FIFO: oldest pending charge with same amount
-        }
+        // 3. Valor + janela temporal ±48h
+        var from   = evt.PaidAt - MatchWindow;
+        var to     = evt.PaidAt + MatchWindow;
+        var window = await _charges.FindPendingByAmountAndDateRangeAsync(
+            evt.PaidAmount, evt.OrganizationId, from, to, ct);
 
-        return null;
+        if (window.Count == 1)
+            return MatchResult.Found(window[0], ConfidenceLevel.Medium, MatchReason.ValueWithinTimeWindow, "Value+Date");
+
+        if (window.Count > 1)
+            return MatchResult.Multiple(window, MatchReason.ValueWithinTimeWindow);
+
+        // 4. Valor + FIFO (sem janela)
+        var fifo = await _charges.FindPendingByAmountAsync(evt.PaidAmount, evt.OrganizationId, ct);
+
+        if (fifo.Count == 1)
+            return MatchResult.Found(fifo[0], ConfidenceLevel.Low, MatchReason.ValueFifo, "Value+FIFO");
+
+        if (fifo.Count > 1)
+            return MatchResult.Multiple(fifo, MatchReason.ValueFifo);
+
+        return MatchResult.NotFound(MatchReason.NoMatch);
     }
 
-    private static ReconciliationStatus DetermineNoChargeStatus(PaymentEvent paymentEvent)
+    // ── Build outcome ────────────────────────────────────────────────────────────
+
+    private static async Task<ReconciliationOutcome> BuildOutcomeAsync(
+        PaymentEvent evt,
+        MatchResult match,
+        CancellationToken _)
     {
-        // Se havia identificador mas não encontrou cobrança → PaymentWithoutCharge
-        if (!string.IsNullOrWhiteSpace(paymentEvent.ExternalChargeId) ||
-            !string.IsNullOrWhiteSpace(paymentEvent.ReferenceId))
-            return ReconciliationStatus.PaymentWithoutCharge;
+        var orgId = evt.OrganizationId;
 
-        // Sem identificador e sem org → não foi possível tentar fuzzy
-        if (paymentEvent.OrganizationId == Guid.Empty)
-            return ReconciliationStatus.InvalidReference;
+        // ── Sem candidato ─────────────────────────────────────────────────────────
+        if (match.Charge is null && match.Candidates.Count == 0)
+        {
+            var noMatchStatus = match.Reason == MatchReason.InvalidReference
+                ? ReconciliationStatus.InvalidReference
+                : ReconciliationStatus.PaymentWithoutCharge;
 
-        // Tinha org, tentou fuzzy, não achou → pagamento sem cobrança correspondente
-        return ReconciliationStatus.PaymentWithoutCharge;
+            var noMatchReason = match.Reason == MatchReason.InvalidReference
+                ? "Identificador informado não corresponde a nenhuma cobrança no sistema."
+                : "Nenhuma cobrança pendente encontrada para este pagamento.";
+
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(orgId, null, evt.Id, noMatchStatus, noMatchReason,
+                    null, evt.PaidAmount, ConfidenceLevel.High, match.Reason),
+                null);
+        }
+
+        // ── Múltiplos candidatos — requer escolha humana ──────────────────────────
+        if (match.Candidates.Count > 1)
+        {
+            var candidateIds = string.Join(", ", match.Candidates.Take(5).Select(c => c.ReferenceId));
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, null, evt.Id,
+                    ReconciliationStatus.MultipleMatchCandidates,
+                    $"Múltiplos candidatos ({match.Candidates.Count}) com valor R${evt.PaidAmount:F2}: {candidateIds}.",
+                    null, evt.PaidAmount,
+                    match.Confidence, match.Reason, match.MatchedField),
+                null);
+        }
+
+        var charge = match.Charge!;
+
+        // ── Cobrança já conciliada com alta confiança — duplicata definitiva ───────
+        if (charge.Status == ChargeStatus.Paid)
+        {
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.DuplicatePayment,
+                    "Cobrança já conciliada. Este pagamento é duplicado.",
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null);
+        }
+
+        // ── Cobrança em PendingReview (reservada por outro match de baixa confiança)
+        if (charge.Status == ChargeStatus.PendingReview)
+        {
+            // Match por ID exato supera a reserva prévia
+            if (match.Confidence == ConfidenceLevel.High)
+            {
+                charge.MarkAsPaid();
+                return new ReconciliationOutcome(
+                    ReconciliationResult.Create(
+                        orgId, charge.Id, evt.Id,
+                        ReconciliationStatus.Matched,
+                        "Conciliado por identificador exato, substituindo match anterior de baixa confiança.",
+                        charge.Amount, evt.PaidAmount,
+                        ConfidenceLevel.High, match.Reason, match.MatchedField),
+                    charge);
+            }
+
+            // Outro fuzzy — trata como duplicata (a reserva original tem prioridade)
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.DuplicatePayment,
+                    "Cobrança já reservada por outro match em análise.",
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null);
+        }
+
+        // ── Cobrança Divergent com valor correto → re-concilia ────────────────────
+        if (charge.Status == ChargeStatus.Divergent && evt.PaidAmount == charge.Amount
+            && match.Confidence == ConfidenceLevel.High)
+        {
+            charge.MarkAsPaid();
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.Matched,
+                    "Re-conciliado com sucesso após novo pagamento com valor correto.",
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                charge);
+        }
+
+        // ── Cobrança expirada ─────────────────────────────────────────────────────
+        if (charge.IsExpired())
+        {
+            charge.MarkAsDivergent();
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.ExpiredChargePaid,
+                    $"Cobrança expirou em {charge.ExpiresAt:dd/MM/yyyy HH:mm} e recebeu pagamento após o prazo.",
+                    charge.Amount, evt.PaidAmount,
+                    match.Confidence, MatchReason.FoundButExpired, match.MatchedField),
+                charge);
+        }
+
+        // ── Valor divergente ──────────────────────────────────────────────────────
+        if (evt.PaidAmount != charge.Amount)
+        {
+            charge.MarkAsDivergent();
+            var delta = evt.PaidAmount - charge.Amount;
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.AmountMismatch,
+                    $"Valor pago R${evt.PaidAmount:F2} difere do esperado R${charge.Amount:F2} (delta: {delta:+0.00;-0.00}).",
+                    charge.Amount, evt.PaidAmount,
+                    match.Confidence, MatchReason.FoundWithAmountMismatch, match.MatchedField),
+                charge);
+        }
+
+        // ── Match de baixa/média confiança — reserva para revisão ─────────────────
+        if (match.Confidence is ConfidenceLevel.Low or ConfidenceLevel.Medium)
+        {
+            charge.MarkAsPendingReview();
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.MatchedLowConfidence,
+                    $"Match por {match.MatchedField} sem identificador único. Aguarda confirmação humana.",
+                    charge.Amount, evt.PaidAmount,
+                    match.Confidence, match.Reason, match.MatchedField),
+                charge);
+        }
+
+        // ── Happy path: match exato + valor correto ───────────────────────────────
+        charge.MarkAsPaid();
+        return new ReconciliationOutcome(
+            ReconciliationResult.Create(
+                orgId, charge.Id, evt.Id,
+                ReconciliationStatus.Matched,
+                "Pagamento conciliado com sucesso.",
+                charge.Amount, evt.PaidAmount,
+                ConfidenceLevel.High, match.Reason, match.MatchedField),
+            charge);
     }
+}
+
+// ── Value object interno ──────────────────────────────────────────────────────
+
+file sealed record MatchResult
+{
+    public Charge?              Charge       { get; init; }
+    public IReadOnlyList<Charge> Candidates  { get; init; } = [];
+    public ConfidenceLevel      Confidence   { get; init; }
+    public MatchReason          Reason       { get; init; }
+    public string?              MatchedField { get; init; }
+
+    public static MatchResult Found(Charge charge, ConfidenceLevel confidence, MatchReason reason, string field)
+        => new() { Charge = charge, Confidence = confidence, Reason = reason, MatchedField = field };
+
+    public static MatchResult Multiple(IReadOnlyList<Charge> candidates, MatchReason reason)
+        => new() { Candidates = candidates, Confidence = ConfidenceLevel.Low, Reason = reason };
+
+    public static MatchResult NotFound(MatchReason reason)
+        => new() { Confidence = ConfidenceLevel.High, Reason = reason };
 }

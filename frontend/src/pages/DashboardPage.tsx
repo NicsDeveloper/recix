@@ -3,9 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   CheckCircle, AlertTriangle, Copy, Ban, Clock,
-  ArrowRight, ChevronRight, Download, FileText, Bell,
+  ArrowRight, ChevronRight, Download, FileText, Bell, Eye,
 } from 'lucide-react'
 import { dashboardService }          from '../services/dashboardService'
+import { reconciliationsService }    from '../services/reconciliationsService'
 import { LoadingState }              from '../components/ui/LoadingState'
 import { ErrorState }                from '../components/ui/ErrorState'
 import { DashboardHeader }           from '../components/layout/DashboardHeader'
@@ -69,6 +70,35 @@ function Badge({ status }: { status: string }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${bg} ${fg} ${border} whitespace-nowrap`}>
       {BADGE_LABEL[status] ?? status}
     </span>
+  )
+}
+
+// ─── Pending Review Banner ────────────────────────────────────────────────────
+
+function PendingReviewBanner({ count }: { count: number }) {
+  const navigate = useNavigate()
+  if (count === 0) return null
+
+  return (
+    <div className="flex items-center gap-4 px-5 py-4 rounded-2xl border border-amber-500/30 bg-amber-500/8 bg-gradient-to-r from-amber-950/40 to-gray-950">
+      <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center flex-shrink-0">
+        <Eye size={18} className="text-amber-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-amber-300">
+          {count} conciliação{count !== 1 ? 'ões' : ''} aguardando revisão
+        </p>
+        <p className="text-xs text-amber-500/80 mt-0.5">
+          O período não pode ser fechado enquanto houver itens pendentes. Confirme ou rejeite cada match.
+        </p>
+      </div>
+      <button
+        onClick={() => navigate('/reconciliations?tab=review')}
+        className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl hover:bg-amber-500/20 transition-colors"
+      >
+        Revisar agora <ArrowRight size={12} />
+      </button>
+    </div>
   )
 }
 
@@ -244,6 +274,15 @@ export function DashboardPage() {
     refetchInterval: 60_000,
   })
 
+  const { data: pendingReview } = useQuery({
+    queryKey:        ['pending-review'],
+    queryFn:         () => reconciliationsService.getPendingReview(),
+    staleTime:       30_000,
+    refetchInterval: 60_000,
+  })
+
+  const pendingReviewCount = pendingReview?.totalCount ?? 0
+
   if (isLoading) return <LoadingState />
   if (isError)   return <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
   if (!data)     return null
@@ -291,6 +330,9 @@ export function DashboardPage() {
         onFromDateChange={v => { setFromDate(v); setVerdictDismissed(false) }}
         onToDateChange={v => { setToDate(v); setVerdictDismissed(false) }}
       />
+
+      {/* ── Banner de revisão pendente (aparece sempre que há itens) ─────────── */}
+      <PendingReviewBanner count={pendingReviewCount} />
 
       {/* ── Row 1: Verdict + KPI cards ──────────────────────────────────────── */}
       {!verdictDismissed && (

@@ -6,6 +6,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AppLayout } from './components/layout/AppLayout'
 import { LoginPage } from './pages/LoginPage'
 import { PendingApprovalPage } from './pages/PendingApprovalPage'
+import { OrgSetupPage } from './pages/OrgSetupPage'
 import { JoinRequestsPage } from './pages/JoinRequestsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ChargesPage } from './pages/ChargesPage'
@@ -55,7 +56,12 @@ function AppCore() {
 
   if (isLoading) return <LoadingState />
 
-  // Usuário logado mas aguardando aprovação (sem org)
+  // Usuário logado mas sem org e sem solicitação → precisa configurar empresa
+  if (user && organizations.length === 0 && !pendingJoinRequest) {
+    return <OrgSetupPage />
+  }
+
+  // Usuário logado com solicitação pendente → aguardando aprovação
   if (user && organizations.length === 0 && pendingJoinRequest) {
     return <PendingApprovalPage />
   }

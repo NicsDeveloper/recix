@@ -18,8 +18,6 @@ public sealed class GoogleAuthUseCase(
         var user = await users.GetByGoogleIdAsync(payload.Subject, ct)
                 ?? await users.GetByEmailAsync(payload.Email, ct);
 
-        bool isNew = user is null;
-
         if (user is null)
         {
             user = User.CreateWithGoogle(payload.Email, payload.Name, payload.Subject);
@@ -33,27 +31,7 @@ public sealed class GoogleAuthUseCase(
             await users.UpdateAsync(user, ct);
         }
 
-        // Se é um usuário novo pelo Google, cria automaticamente a primeira org
-        if (isNew)
-        {
-            var orgName = payload.Name + "'s Organization";
-            var org     = Organization.Create(orgName);
-            var member  = OrganizationMember.Create(org.Id, user.Id, OrgRoles.Owner);
-            await orgs.AddAsync(org, ct);
-            await orgs.AddMemberAsync(member, ct);
-
-            return new AuthResponse
-            {
-                Token = jwt.GenerateToken(user, org.Id, OrgRoles.Owner),
-                User  = new UserDto { Id = user.Id, Email = user.Email, Name = user.Name, Role = OrgRoles.Owner },
-                Organizations =
-                [
-                    new OrgMembershipDto { OrgId = org.Id, Name = org.Name, Slug = org.Slug, Role = OrgRoles.Owner, IsCurrent = true }
-                ],
-            };
-        }
-
-        // Usuário existente — reutiliza helper do LoginUseCase
+        // Sempre passa pelo BuildAuthResponseAsync — usuário novo sem org cai no fluxo de onboarding
         var loginHelper = new LoginUseCase(users, orgs, joinRequests, jwt, null!);
         return await loginHelper.BuildAuthResponseAsync(user, ct);
     }

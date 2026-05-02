@@ -24,9 +24,25 @@ public interface IChargeRepository
     Task<List<Charge>> GetExpiredPendingAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retorna cobranças Pending da organização com o valor exato indicado,
-    /// ordenadas por CreatedAt crescente (FIFO). Usado para matching por valor
-    /// quando o extrato bancário não carrega ReferenceId/ExternalChargeId.
+    /// Retorna cobranças Pending ou PendingReview com o valor exato — FIFO sem filtro de data.
+    /// Fallback de último recurso no matching.
     /// </summary>
     Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retorna cobranças Pending com o valor exato cujo CreatedAt está dentro da janela [from, to].
+    /// Preferível ao FIFO puro — maior precisão sem requerer identificador.
+    /// </summary>
+    Task<List<Charge>> FindPendingByAmountAndDateRangeAsync(
+        decimal amount,
+        Guid organizationId,
+        DateTime from,
+        DateTime to,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retorna cobranças Expired da organização que ainda não têm ReconciliationResult associado.
+    /// Usada pelo ExpirationSweepService para gerar ChargeWithoutPayment.
+    /// </summary>
+    Task<List<Charge>> GetExpiredWithoutReconciliationAsync(CancellationToken cancellationToken = default);
 }
