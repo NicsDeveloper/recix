@@ -28,4 +28,9 @@ export const authService = {
     const { data } = await http.post<AuthResponse>('/auth/google', { credential })
     return data
   },
+
+  async refresh(): Promise<AuthResponse> {
+    const { data } = await http.post<AuthResponse>('/auth/refresh')
+    return data
+  },
 }

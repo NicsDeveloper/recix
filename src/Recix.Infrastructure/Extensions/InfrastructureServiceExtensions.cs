@@ -45,6 +45,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<GoogleAuthUseCase>();
         services.AddScoped<SwitchOrgUseCase>();
         services.AddScoped<ReviewJoinRequestUseCase>();
+        services.AddScoped<RefreshSessionUseCase>();
         services.AddScoped<ImportBankStatementUseCase>();
         services.AddScoped<ImportSalesUseCase>();
         services.AddSingleton<PaymentReliabilityMetrics>();

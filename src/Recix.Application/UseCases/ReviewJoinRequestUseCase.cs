@@ -8,7 +8,8 @@ namespace Recix.Application.UseCases;
 public sealed class ReviewJoinRequestUseCase(
     IOrganizationJoinRequestRepository joinRequests,
     IOrganizationRepository orgs,
-    IUserRepository users)
+    IUserRepository users,
+    IEventBroadcaster broadcaster)
 {
     public async Task<JoinRequestDto> ExecuteAsync(
         Guid requestId,
@@ -39,6 +40,7 @@ public sealed class ReviewJoinRequestUseCase(
         }
 
         await joinRequests.UpdateAsync(req, ct);
+        broadcaster.Publish(RecixEvent.JoinRequestReviewed(req.Id, req.UserId, accept));
 
         // Busca dados para retorno
         var org  = await orgs.GetByIdAsync(req.OrganizationId, ct);

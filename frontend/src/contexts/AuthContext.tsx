@@ -1,6 +1,7 @@
 /* eslint react-refresh/only-export-components: 0 */
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { UserDto, OrgMembershipDto, JoinRequestDto } from '../types'
+import { authService } from '../services/authService'
 
 const TOKEN_KEY   = 'recix_token'
 const USER_KEY    = 'recix_user'
@@ -16,6 +17,7 @@ interface AuthContextValue {
   isLoading:          boolean
   login:              (token: string, user: UserDto, orgs?: OrgMembershipDto[], pending?: JoinRequestDto | null) => void
   logout:             () => void
+  refreshAuth:        () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -65,6 +67,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingJoinRequest(pending)
   }, [])
 
+  const refreshAuth = useCallback(async () => {
+    try {
+      const res = await authService.refresh()
+      localStorage.setItem(TOKEN_KEY, res.token)
+      localStorage.setItem(USER_KEY, JSON.stringify(res.user))
+      localStorage.setItem(ORGS_KEY, JSON.stringify(res.organizations))
+      if (res.pendingJoinRequest) localStorage.setItem(PENDING_KEY, JSON.stringify(res.pendingJoinRequest))
+      else                        localStorage.removeItem(PENDING_KEY)
+      setToken(res.token)
+      setUser(res.user)
+      setOrganizations(res.organizations)
+      setPendingJoinRequest(res.pendingJoinRequest ?? null)
+    } catch {
+      // token expirado ou inválido — deixa o usuário na tela atual
+    }
+  }, [])
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
@@ -77,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, token, organizations, currentOrg, pendingJoinRequest, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, organizations, currentOrg, pendingJoinRequest, isLoading, login, logout, refreshAuth }}>
       {children}
     </AuthContext.Provider>
   )

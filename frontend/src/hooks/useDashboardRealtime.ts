@@ -1,12 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import * as signalR from '@microsoft/signalr'
-import { getStoredToken } from '../contexts/AuthContext'
+import { getStoredToken, useAuth } from '../contexts/AuthContext'
 
 interface RecixSignalREvent {
   type:     string
   entityId: string | null
-  orgId:    string
+  orgId:    string | null
+  userId:   string | null
+  accepted: boolean | null
 }
 
 /**
@@ -16,6 +18,7 @@ interface RecixSignalREvent {
  */
 export function useDashboardRealtime() {
   const queryClient = useQueryClient()
+  const { refreshAuth } = useAuth()
   const connRef     = useRef<signalR.HubConnection | null>(null)
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export function useDashboardRealtime() {
     connRef.current = connection
 
     connection.on('RecixEvent', (evt: RecixSignalREvent) => {
-      handleEvent(evt, queryClient)
+      handleEvent(evt, queryClient, refreshAuth)
     })
 
     connection.onreconnected(() => {
@@ -49,10 +52,14 @@ export function useDashboardRealtime() {
     return () => {
       connection.stop()
     }
-  }, [queryClient])
+  }, [queryClient, refreshAuth])
 }
 
-function handleEvent(evt: RecixSignalREvent, queryClient: ReturnType<typeof useQueryClient>) {
+function handleEvent(
+  evt: RecixSignalREvent,
+  queryClient: ReturnType<typeof useQueryClient>,
+  refreshAuth: () => Promise<void>,
+) {
   switch (evt.type) {
     case 'charge.updated':
       queryClient.invalidateQueries({ queryKey: ['charges'] })
@@ -78,6 +85,14 @@ function handleEvent(evt: RecixSignalREvent, queryClient: ReturnType<typeof useQ
     case 'payment_event.updated':
       queryClient.invalidateQueries({ queryKey: ['payment-events'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+      break
+
+    case 'join_request.reviewed':
+      // Atualiza a sessão do usuário que estava aguardando aprovação.
+      // refreshAuth busca novo JWT com org_id e atualiza o AuthContext —
+      // o App.tsx re-renderiza e redireciona automaticamente para a dashboard.
+      refreshAuth()
+      queryClient.invalidateQueries({ queryKey: ['join-requests'] })
       break
   }
 }

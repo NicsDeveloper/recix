@@ -31,15 +31,32 @@ public sealed class SignalRBridgeService : BackgroundService
 
         await foreach (var evt in _broadcaster.SubscribeAsync(stoppingToken))
         {
-            if (evt.OrgId is null) continue;   // eventos sem contexto de org são descartados aqui
+            if (evt.OrgId is null && evt.UserId is null) continue;
 
             try
             {
-                var group = DashboardHub.OrgGroup(evt.OrgId.Value);
-                await _hub.Clients.Group(group).SendAsync(
-                    "RecixEvent",
-                    new { type = evt.Type, entityId = evt.EntityId, orgId = evt.OrgId.Value.ToString() },
-                    stoppingToken);
+                var payload = new
+                {
+                    type     = evt.Type,
+                    entityId = evt.EntityId,
+                    orgId    = evt.OrgId?.ToString(),
+                    userId   = evt.UserId?.ToString(),
+                    accepted = evt.Accepted,
+                };
+
+                if (evt.OrgId is not null)
+                {
+                    await _hub.Clients
+                        .Group(DashboardHub.OrgGroup(evt.OrgId.Value))
+                        .SendAsync("RecixEvent", payload, stoppingToken);
+                }
+
+                if (evt.UserId is not null)
+                {
+                    await _hub.Clients
+                        .Group(DashboardHub.UserGroup(evt.UserId.Value))
+                        .SendAsync("RecixEvent", payload, stoppingToken);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -27,7 +27,7 @@ public sealed class LoginUseCase(
         return await BuildAuthResponseAsync(user, ct);
     }
 
-    internal async Task<AuthResponse> BuildAuthResponseAsync(
+    public async Task<AuthResponse> BuildAuthResponseAsync(
         Domain.Entities.User user,
         CancellationToken ct,
         Guid? preferredOrgId = null)
