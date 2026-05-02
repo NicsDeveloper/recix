@@ -8,7 +8,6 @@ import {
   Zap,
   GitMerge,
   PlayCircle,
-  AlertTriangle,
   FileText,
   Bell,
   Wifi,
@@ -42,12 +41,6 @@ const navItems: NavItem[] = [
   { kind: 'link', label: 'Cobranças', icon: CreditCard, to: '/charges' },
   { kind: 'link', label: 'Eventos de Pagamento', icon: Zap, to: '/payment-events', adminOnly: true },
   { kind: 'link', label: 'Conciliações', icon: GitMerge, to: '/reconciliations' },
-  {
-    kind: 'link',
-    label: 'Divergências',
-    icon: AlertTriangle,
-    to: '/reconciliations?filter=divergent',
-  },
   {
     kind: 'link',
     label: 'Simulador PIX',

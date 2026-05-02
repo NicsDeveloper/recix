@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { Download, FileSpreadsheet, FileJson, FileText, CalendarDays, Database, ArrowDownToLine } from 'lucide-react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Download, FileSpreadsheet, FileJson, FileText, CalendarDays, Database, ArrowDownToLine, CheckCircle, AlertTriangle, Eye, BarChart2 } from 'lucide-react'
 import { Header } from '../components/layout/Header'
 import { FilterBar } from '../components/ui/FilterBar'
 import { chargesService } from '../services/chargesService'
 import { paymentEventsService } from '../services/paymentEventsService'
 import { reconciliationsService } from '../services/reconciliationsService'
+import { dashboardService } from '../services/dashboardService'
 import { formatCurrency, formatDateTime } from '../lib/formatters'
+import type { ClosingReport } from '../types'
 
 type ReportType = 'charges' | 'payment-events' | 'reconciliations'
 type ReportFormat = 'csv' | 'json' | 'pdf'
@@ -183,6 +185,176 @@ function reportLabel(type: ReportType) {
     : type === 'payment-events'
       ? 'Eventos de Pagamento'
       : 'Conciliações'
+}
+
+// ─── Closing Report ──────────────────────────────────────────────────────────
+
+const RECON_ROWS: Array<{
+  key: keyof ClosingReport
+  label: string
+  color: string
+  attention?: boolean
+}> = [
+  { key: 'reconciliationsMatched',              label: 'Conciliado (alta confiança)',  color: 'text-green-400' },
+  { key: 'reconciliationsMatchedLowConfidence', label: 'Revisar match (baixa conf.)',  color: 'text-amber-400', attention: true },
+  { key: 'reconciliationsAmountMismatch',       label: 'Valor divergente',            color: 'text-red-400',   attention: true },
+  { key: 'reconciliationsDuplicate',            label: 'Pagamento duplicado',         color: 'text-orange-400',attention: true },
+  { key: 'reconciliationsNoCharge',             label: 'Pagamento sem cobrança',      color: 'text-yellow-400',attention: true },
+  { key: 'reconciliationsChargeWithoutPayment', label: 'Cobrança sem pagamento',      color: 'text-red-400',   attention: true },
+  { key: 'reconciliationsMultipleMatch',        label: 'Múltiplos candidatos',        color: 'text-indigo-400',attention: true },
+  { key: 'reconciliationsExpiredPaid',          label: 'Cobrança expirada paga',      color: 'text-gray-400',  attention: true },
+  { key: 'reconciliationsInvalidRef',           label: 'Referência inválida',         color: 'text-purple-400',attention: true },
+  { key: 'reconciliationsError',                label: 'Erro de processamento',       color: 'text-gray-500',  attention: true },
+]
+
+function ClosingReportSection({ fromDate, toDate }: { fromDate: string; toDate: string }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['closing-report', fromDate, toDate],
+    queryFn: () => dashboardService.getClosingReport({ fromDate, toDate }),
+    staleTime: 60_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 flex items-center justify-center h-48">
+        <p className="text-sm text-gray-500 animate-pulse">Carregando relatório...</p>
+      </div>
+    )
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+        <p className="text-sm text-red-400">Erro ao carregar o relatório de fechamento.</p>
+      </div>
+    )
+  }
+
+  const r = data
+  const attentionCount = RECON_ROWS
+    .filter(row => row.attention)
+    .reduce((sum, row) => sum + (Number(r[row.key]) || 0), 0)
+  const closeable = attentionCount === 0
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div className="flex items-center gap-2.5">
+          <BarChart2 size={15} className="text-indigo-400" />
+          <h2 className="text-sm font-semibold text-gray-200">Relatório de Fechamento</h2>
+        </div>
+        <div className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+          closeable
+            ? 'text-green-400 border-green-500/20 bg-green-500/10'
+            : 'text-amber-400 border-amber-500/20 bg-amber-500/10'
+        }`}>
+          {closeable
+            ? <><CheckCircle size={12} /> Período fechável</>
+            : <><Eye size={12} /> {attentionCount} ocorrência{attentionCount !== 1 ? 's' : ''} pendente{attentionCount !== 1 ? 's' : ''}</>
+          }
+        </div>
+      </div>
+
+      <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* KPIs financeiros */}
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Financeiro</p>
+          {[
+            { label: 'Valor esperado',   value: formatCurrency(r.expectedAmount),  color: 'text-gray-200' },
+            { label: 'Valor recebido',   value: formatCurrency(r.receivedAmount),  color: 'text-green-400' },
+            { label: 'Valor divergente', value: formatCurrency(r.divergentAmount), color: r.divergentAmount > 0 ? 'text-red-400' : 'text-gray-400' },
+            { label: 'Valor pendente',   value: formatCurrency(r.pendingAmount),   color: r.pendingAmount > 0 ? 'text-yellow-400' : 'text-gray-400' },
+            { label: 'Taxa de recuperação', value: `${Number(r.recoveryRate).toFixed(1)}%`, color: Number(r.recoveryRate) >= 95 ? 'text-green-400' : 'text-orange-400' },
+          ].map(item => (
+            <div key={item.label} className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">{item.label}</span>
+              <span className={`text-sm font-semibold tabular-nums ${item.color}`}>{item.value}</span>
+            </div>
+          ))}
+          <div className="pt-2 border-t border-gray-800 space-y-1">
+            {[
+              { label: 'Cobranças totais',    value: r.totalCharges },
+              { label: 'Pagas',               value: r.paidCharges,     color: 'text-green-400' },
+              { label: 'Pendentes',           value: r.pendingCharges,  color: r.pendingCharges  > 0 ? 'text-yellow-400' : undefined },
+              { label: 'Divergentes',         value: r.divergentCharges,color: r.divergentCharges > 0 ? 'text-red-400' : undefined },
+              { label: 'Expiradas',           value: r.expiredCharges,  color: r.expiredCharges  > 0 ? 'text-gray-400' : undefined },
+            ].map(item => (
+              <div key={item.label} className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">{item.label}</span>
+                <span className={`text-xs font-semibold tabular-nums ${item.color ?? 'text-gray-300'}`}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Breakdown de conciliações */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Conciliações ({r.reconciliationsTotal} total)</p>
+          {RECON_ROWS.map(row => {
+            const count = Number(r[row.key]) || 0
+            const pct = r.reconciliationsTotal > 0 ? (count / r.reconciliationsTotal) * 100 : 0
+            return (
+              <div key={row.key}>
+                <div className="flex items-center justify-between mb-0.5">
+                  <div className="flex items-center gap-1.5">
+                    {row.attention && count > 0 && <AlertTriangle size={10} className="text-amber-400 flex-shrink-0" />}
+                    <span className="text-xs text-gray-400">{row.label}</span>
+                  </div>
+                  <span className={`text-xs font-semibold tabular-nums ${count > 0 ? row.color : 'text-gray-600'}`}>{count}</span>
+                </div>
+                {r.reconciliationsTotal > 0 && (
+                  <div className="h-1 rounded-full bg-gray-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${count === 0 ? 'bg-gray-700' : row.attention ? 'bg-red-500/50' : 'bg-green-500/50'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Cobranças não conciliadas */}
+      {r.unreconciled.length > 0 && (
+        <div className="border-t border-gray-800 px-5 py-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Cobranças sem conciliação ({r.unreconciled.length})
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left">
+                  {['Referência', 'Valor', 'Status', 'Expira em'].map(h => (
+                    <th key={h} className="pb-2 pr-4 font-semibold text-gray-600 uppercase tracking-wider text-[10px]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {r.unreconciled.slice(0, 10).map(u => (
+                  <tr key={u.id} className="border-t border-gray-800/50">
+                    <td className="py-1.5 pr-4 font-mono text-gray-300">{u.referenceId}</td>
+                    <td className="py-1.5 pr-4 text-gray-200 font-semibold tabular-nums">{formatCurrency(u.amount)}</td>
+                    <td className="py-1.5 pr-4 text-gray-400">{u.status}</td>
+                    <td className="py-1.5 text-gray-500">{new Date(u.expiresAt).toLocaleDateString('pt-BR')}</td>
+                  </tr>
+                ))}
+                {r.unreconciled.length > 10 && (
+                  <tr><td colSpan={4} className="pt-2 text-gray-600 text-[10px]">+ {r.unreconciled.length - 10} mais</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-gray-800 px-5 py-2.5">
+        <p className="text-[10px] text-gray-600">Gerado em {new Date(r.generatedAt).toLocaleString('pt-BR')}</p>
+      </div>
+    </div>
+  )
 }
 
 export function ReportsPage() {
@@ -434,6 +606,10 @@ export function ReportsPage() {
           </p>
         </div>
       )}
+
+      <div className="mt-6">
+        <ClosingReportSection fromDate={fromDate} toDate={toDate} />
+      </div>
     </div>
   )
 }

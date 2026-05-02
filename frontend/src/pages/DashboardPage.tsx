@@ -116,7 +116,7 @@ function PendingReviewBanner({ count }: { count: number }) {
 
 // ─── Verdict Card ─────────────────────────────────────────────────────────────
 
-function VerdictCard({ isOk, divergentAmt }: { isOk: boolean; divergentAmt: number }) {
+function VerdictCard({ isOk, divergentAmt, periodCloseable }: { isOk: boolean; divergentAmt: number; periodCloseable: boolean }) {
   const navigate = useNavigate()
 
   if (isOk) {
@@ -132,12 +132,22 @@ function VerdictCard({ isOk, divergentAmt }: { isOk: boolean; divergentAmt: numb
         <p className="text-sm text-gray-400 mb-6">
           Todos os valores recebidos batem com o esperado.
         </p>
-        <button
-          onClick={() => navigate('/reconciliations')}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-500/30 bg-green-500/10 text-green-300 text-sm font-semibold hover:bg-green-500/20 transition-colors w-fit"
-        >
-          Ver detalhes <ArrowRight size={14} />
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => navigate('/reconciliations')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-500/30 bg-green-500/10 text-green-300 text-sm font-semibold hover:bg-green-500/20 transition-colors"
+          >
+            Ver detalhes <ArrowRight size={14} />
+          </button>
+          <button
+            disabled={!periodCloseable}
+            title={periodCloseable ? 'Fechar o período atual' : 'Há conciliações aguardando revisão — resolva-as antes de fechar o período'}
+            onClick={() => navigate('/reports')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-500/30 bg-green-500/15 text-green-200 text-sm font-semibold hover:bg-green-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Fechar período
+          </button>
+        </div>
       </div>
     )
   }
@@ -353,7 +363,7 @@ export function DashboardPage() {
         <div className="grid grid-cols-12 gap-4">
           {/* Verdict */}
           <div className="col-span-12 lg:col-span-4">
-            <VerdictCard isOk={isOk} divergentAmt={divAmt} />
+            <VerdictCard isOk={isOk} divergentAmt={divAmt} periodCloseable={s.periodCloseable} />
           </div>
 
           {/* KPI cards */}
