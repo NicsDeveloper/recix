@@ -1,0 +1,41 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.nupkg
+*.snupkg
+.vs/
+
+# Publish output
+publish/
+out/
+
+# Logs
+*.log
+logs/
+
+# Secrets / local config
+appsettings.Local.json
+appsettings.*.local.json
+*.pfx
+*.p12
+secrets.json
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
