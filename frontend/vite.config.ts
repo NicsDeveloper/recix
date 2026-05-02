@@ -11,7 +11,6 @@ export default defineConfig({
       '/api': {
         target: API_TARGET,
         changeOrigin: true,
-        ws: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes) => {
@@ -19,6 +18,11 @@ export default defineConfig({
             proxyRes.headers['cache-control'] = 'no-cache'
           })
         },
+      },
+      '/hubs': {
+        target: API_TARGET,
+        changeOrigin: true,
+        ws: true,
       },
     },
   },
