@@ -1,19 +1,18 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  AlertTriangle, CheckCircle, Copy, Ban, Clock,
-  ArrowRight, ShoppingBag, Building2, TrendingUp,
-  Download, FileText, Bell, ChevronRight, X,
+  CheckCircle, AlertTriangle, Copy, Ban, Clock,
+  ArrowRight, ChevronRight, Download, FileText, Bell,
 } from 'lucide-react'
-import { dashboardService } from '../services/dashboardService'
-import { LoadingState }     from '../components/ui/LoadingState'
-import { ErrorState }       from '../components/ui/ErrorState'
-import { DashboardHeader }  from '../components/layout/DashboardHeader'
-import { FluxFinanceiroLineChart } from '../components/dashboard/FluxFinanceiroLineChart'
-import { DashboardKpiCard } from '../components/dashboard/DashboardKpiCard'
-import type { FluxPoint, ReconciliationStatus, RecentReconciliation, DashboardSummary } from '../types'
-import { formatCurrency } from '../lib/formatters'
+import { dashboardService }          from '../services/dashboardService'
+import { LoadingState }              from '../components/ui/LoadingState'
+import { ErrorState }                from '../components/ui/ErrorState'
+import { DashboardHeader }           from '../components/layout/DashboardHeader'
+import { FluxFinanceiroLineChart }   from '../components/dashboard/FluxFinanceiroLineChart'
+import { DashboardKpiCard }          from '../components/dashboard/DashboardKpiCard'
+import type { FluxPoint, ReconciliationStatus, DashboardSummary } from '../types'
+import { formatCurrency }            from '../lib/formatters'
 import { effectiveDivergenceAmount } from '../lib/dashboardSummary'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -24,11 +23,7 @@ function fmtShort(iso: string | null | undefined) {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
-    const day   = String(d.getDate()).padStart(2, '0')
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const hh    = String(d.getHours()).padStart(2, '0')
-    const mm    = String(d.getMinutes()).padStart(2, '0')
-    return `${day}/${month}, ${hh}:${mm}`
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
   } catch { return iso ?? '—' }
 }
 
@@ -39,25 +34,12 @@ function sparkFromSeries(series: FluxPoint[], key: 'received' | 'expected' | 'di
   return [v * 0.2, v * 0.45, v * 0.7, Math.max(v, 1)]
 }
 
-type IssueAmounts = {
-  amountMismatch: number
-  duplicatePayment: number
-  paymentWithoutCharge: number
-  expiredChargePaid: number
+function trendPct(current: number, previous: number): number | null {
+  if (previous === 0) return null
+  return ((current - previous) / previous) * 100
 }
 
-function sumsFromRecent(recent: RecentReconciliation[], s: DashboardSummary): IssueAmounts {
-  const sumPaid = (st: ReconciliationStatus) =>
-    recent.filter(r => r.status === st).reduce((acc, r) => acc + r.paidAmount, 0)
-  return {
-    amountMismatch:       s.totalDivergentAmount,
-    duplicatePayment:     sumPaid('DuplicatePayment'),
-    paymentWithoutCharge: sumPaid('PaymentWithoutCharge'),
-    expiredChargePaid:    sumPaid('ExpiredChargePaid'),
-  }
-}
-
-// ─── Status badge ─────────────────────────────────────────────────────────────
+// ─── Badge ────────────────────────────────────────────────────────────────────
 
 const BADGE: Record<string, [string, string, string]> = {
   Matched:              ['bg-green-500/15',  'text-green-400',  'border-green-500/25'],
@@ -75,211 +57,190 @@ const BADGE: Record<string, [string, string, string]> = {
 
 const BADGE_LABEL: Record<string, string> = {
   Matched: 'Conciliado', AmountMismatch: 'Valor divergente',
-  DuplicatePayment: 'Pagamento duplicado', PaymentWithoutCharge: 'Sem cobrança',
+  DuplicatePayment: 'Pag. duplicado', PaymentWithoutCharge: 'Sem cobrança',
   ExpiredChargePaid: 'Cobrança expirada', InvalidReference: 'Ref. inválida',
   ProcessingError: 'Erro', Processed: 'Processado', Processing: 'Processando',
   Received: 'Recebido', IgnoredDuplicate: 'Ignorado',
 }
 
-function Badge({ status }: { status: ReconciliationStatus | string }) {
+function Badge({ status }: { status: string }) {
   const [bg, fg, border] = BADGE[status] ?? ['bg-gray-500/15', 'text-gray-300', 'border-gray-500/25']
-  const label            = BADGE_LABEL[status] ?? status
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${bg} ${fg} ${border} whitespace-nowrap`}>
-      {label}
+      {BADGE_LABEL[status] ?? status}
     </span>
   )
 }
 
-// ─── Verdict block ─────────────────────────────────────────────────────────────
+// ─── Verdict Card ─────────────────────────────────────────────────────────────
 
-function VerdictBlock({
-  isOk, divergentAmt, receivedAmt, expectedAmt, fluxSeries, nonFinancialIssuesOnly, onDismiss,
-}: {
-  isOk: boolean
-  divergentAmt: number
-  receivedAmt: number
-  expectedAmt: number
-  fluxSeries: FluxPoint[]
-  nonFinancialIssuesOnly?: boolean
-  onDismiss?: () => void
-}) {
+function VerdictCard({ isOk, divergentAmt }: { isOk: boolean; divergentAmt: number }) {
   const navigate = useNavigate()
-  const spExp = sparkFromSeries(fluxSeries, 'expected')
-  const spRecv = sparkFromSeries(fluxSeries, 'received')
-  const spDiv = sparkFromSeries(fluxSeries, 'divergent')
+
+  if (isOk) {
+    return (
+      <div className="rounded-2xl border border-green-500/25 bg-gradient-to-br from-green-950/60 to-gray-950 p-6 flex flex-col justify-center shadow-[0_0_40px_-12px_rgba(34,197,94,0.3)] h-full">
+        <div className="w-14 h-14 rounded-full bg-green-500/15 border border-green-500/25 flex items-center justify-center mb-4">
+          <CheckCircle size={28} className="text-green-400" />
+        </div>
+        <p className="text-xs font-semibold text-green-400 mb-1">Tudo certo!</p>
+        <p className="text-xl font-bold text-gray-50 leading-tight mb-2">
+          Seus pagamentos estão conciliados
+        </p>
+        <p className="text-sm text-gray-400 mb-6">
+          Todos os valores recebidos batem com o esperado.
+        </p>
+        <button
+          onClick={() => navigate('/reconciliations')}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-500/30 bg-green-500/10 text-green-300 text-sm font-semibold hover:bg-green-500/20 transition-colors w-fit"
+        >
+          Ver detalhes <ArrowRight size={14} />
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
-      {/* Alert card */}
-      <div
-        className={[
-          'lg:col-span-5 rounded-2xl border p-6 flex flex-col justify-center min-h-[200px]',
-          isOk
-            ? 'border-green-500/25 bg-gradient-to-br from-green-950/50 to-gray-950 shadow-[0_0_40px_-12px_rgba(34,197,94,0.25)]'
-            : 'border-red-500/30 bg-gradient-to-br from-red-950/70 to-gray-950 shadow-[0_0_48px_-12px_rgba(239,68,68,0.35)]',
-        ].join(' ')}
-      >
-        <div className="flex items-start gap-4">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${isOk ? 'bg-green-500/15' : 'bg-red-500/20'}`}>
-            {isOk
-              ? <CheckCircle size={26} className="text-green-400" />
-              : <AlertTriangle size={26} className="text-red-400" />}
-          </div>
-          <div className="min-w-0 flex-1 relative">
-            {!isOk && onDismiss && (
-              <button
-                type="button"
-                onClick={onDismiss}
-                className="absolute -top-1 -right-1 p-1 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-white/10 transition-colors"
-                title="Fechar alerta"
-              >
-                <X size={16} />
-              </button>
-            )}
-            {isOk ? (
-              <>
-                <p className="text-lg font-bold text-gray-50 leading-snug">
-                  Seus pagamentos estão <span className="text-green-400">conciliados</span>
-                </p>
-                <p className="text-sm text-gray-400 mt-2">
-                  Todos os valores recebidos batem com o esperado.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-lg sm:text-xl font-bold text-gray-50 leading-snug">
-                  <span className="text-red-400">Atenção!</span>{' '}
-                  Seu financeiro <span className="text-orange-400 font-extrabold">NÃO</span> está conciliado
-                </p>
-                {nonFinancialIssuesOnly ? (
-                  <p className="text-sm text-gray-400 mt-2">
-                    Há pendências de conciliação que precisam de revisão. Neste período não há valor monetário
-                    associado a essas ocorrências no total exibido.
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-400 mt-2">
-                      Encontramos divergências que totalizam
-                    </p>
-                    <p className="text-3xl font-black text-red-400 tabular-nums mt-3 tracking-tight">
-                      {formatCurrency(divergentAmt)}
-                    </p>
-                  </>
-                )}
-                <div className="flex flex-wrap gap-2 mt-5">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/reconciliations?filter=divergent')}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors shadow-lg shadow-red-500/20"
-                  >
-                    Ver divergências <ArrowRight size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/reconciliations')}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-sm font-semibold transition-colors"
-                  >
-                    Entenda os motivos
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+    <div className="rounded-2xl border border-red-500/30 bg-gradient-to-br from-red-950/60 to-gray-950 p-6 flex flex-col justify-center shadow-[0_0_48px_-12px_rgba(239,68,68,0.35)] h-full">
+      <div className="w-14 h-14 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center mb-4">
+        <AlertTriangle size={28} className="text-red-400" />
       </div>
-
-      {/* KPI com sparklines */}
-      <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <DashboardKpiCard
-          title="Total esperado"
-          value={formatCurrency(expectedAmt)}
-          icon={<ShoppingBag size={20} />}
-          trend="info"
-          sparkValues={spExp}
-          valueClassName="text-sky-400"
-        />
-        <DashboardKpiCard
-          title="Total recebido"
-          value={formatCurrency(receivedAmt)}
-          icon={<Building2 size={20} />}
-          trend="success"
-          sparkValues={spRecv}
-          valueClassName="text-green-400"
-        />
-        <DashboardKpiCard
-          title="Diferença"
-          value={formatCurrency(divergentAmt)}
-          icon={<TrendingUp size={20} />}
-          trend={isOk ? 'success' : 'danger'}
-          sparkValues={spDiv}
-          valueClassName={isOk ? 'text-green-400' : 'text-red-400'}
-        />
+      <p className="text-xs font-semibold text-red-400 mb-1">Atenção!</p>
+      <p className="text-xl font-bold text-gray-50 leading-tight mb-2">
+        Seu financeiro <span className="text-orange-400">NÃO</span> está conciliado
+      </p>
+      <p className="text-3xl font-black text-red-400 tabular-nums mb-5">
+        {formatCurrency(divergentAmt)}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => navigate('/reconciliations?filter=divergent')}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors shadow-lg shadow-red-500/20"
+        >
+          Ver divergências <ArrowRight size={14} />
+        </button>
+        <button
+          onClick={() => navigate('/reconciliations')}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-sm font-semibold transition-colors"
+        >
+          Entenda os motivos
+        </button>
       </div>
     </div>
   )
 }
 
-// ─── Problems section ─────────────────────────────────────────────────────────
+// ─── Divergence Summary Panel ─────────────────────────────────────────────────
 
-const PROBLEM_DEFS: Array<{
-  key: keyof IssueAmounts
-  icon: ReactNode
+type IssueKey = 'amountMismatch' | 'duplicatePayment' | 'paymentWithoutCharge' | 'expiredChargePaid'
+
+const ISSUE_DEFS: Array<{
+  key: IssueKey
+  icon: React.ReactNode
   color: string
   bg: string
   label: string
 }> = [
-  { key: 'amountMismatch',       icon: <AlertTriangle size={18} />, color: '#ef4444', bg: 'bg-red-500/15',    label: 'Valor divergente' },
-  { key: 'duplicatePayment',     icon: <Copy         size={18} />, color: '#f97316', bg: 'bg-orange-500/15', label: 'Pagamento duplicado' },
-  { key: 'paymentWithoutCharge', icon: <Ban          size={18} />, color: '#eab308', bg: 'bg-yellow-500/15', label: 'Pagamento sem venda' },
-  { key: 'expiredChargePaid',    icon: <Clock        size={18} />, color: '#6b7280', bg: 'bg-gray-500/15',   label: 'Cobrança expirada' },
+  { key: 'amountMismatch',       icon: <AlertTriangle size={20}/>, color: '#ef4444', bg: 'bg-red-500/15',    label: 'Valor divergente' },
+  { key: 'duplicatePayment',     icon: <Copy          size={20}/>, color: '#f97316', bg: 'bg-orange-500/15', label: 'Pagamento duplicado' },
+  { key: 'paymentWithoutCharge', icon: <Ban           size={20}/>, color: '#eab308', bg: 'bg-yellow-500/15', label: 'Pagamento sem venda' },
+  { key: 'expiredChargePaid',    icon: <Clock         size={20}/>, color: '#6b7280', bg: 'bg-gray-500/15',   label: 'Cobrança expirada' },
 ]
 
-function ProblemCard({ icon, color, bg, count, label, amount }: {
-  icon: React.ReactNode; color: string; bg: string
-  count: number; label: string; amount: number
+function DivergenceSummary({
+  ri, amounts,
+}: {
+  ri: DashboardSummary['reconciliationIssues']
+  amounts: Record<IssueKey, number>
 }) {
-  const active = count > 0
+  const allZero = Object.values(amounts).every(v => v === 0) && (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid) === 0
+
   return (
-    <div className={`rounded-xl border p-4 flex flex-col gap-3 transition-colors ${active ? 'border-gray-700 bg-gray-800/60' : 'border-gray-800 bg-gray-900/40'}`}>
-      <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center`} style={{ color }}>
-        {icon}
+    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-200">Resumo das divergências</h2>
+        <Link to="/reconciliations?filter=divergent"
+          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+          Ver todas as divergências <ArrowRight size={12} />
+        </Link>
       </div>
-      <div>
-        <p className="text-3xl font-black leading-none tabular-nums" style={{ color: active ? color : '#374151' }}>
-          {count}
-        </p>
-        <p className={`text-sm font-medium mt-1.5 leading-tight ${active ? 'text-gray-200' : 'text-gray-500'}`}>
-          {label}
-        </p>
-        <p className={`text-xs mt-0.5 tabular-nums ${active ? 'text-gray-400' : 'text-gray-600'}`}>
-          {formatCurrency(amount)}
-        </p>
+
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        {ISSUE_DEFS.map(def => {
+          const count = ri[def.key as keyof typeof ri] as number
+          const amount = amounts[def.key]
+          const active = count > 0
+          return (
+            <div key={def.key}
+              className={`rounded-xl border p-3.5 flex flex-col gap-2 transition-colors ${active ? 'border-gray-700 bg-gray-800/60' : 'border-gray-800 bg-gray-900/40'}`}>
+              <div className={`w-9 h-9 rounded-lg ${def.bg} flex items-center justify-center`} style={{ color: def.color }}>
+                {def.icon}
+              </div>
+              <div>
+                <p className="text-2xl font-black leading-none tabular-nums" style={{ color: active ? def.color : '#374151' }}>
+                  {count}
+                </p>
+                <p className={`text-xs font-medium mt-1 leading-tight ${active ? 'text-gray-200' : 'text-gray-500'}`}>
+                  {def.label}
+                </p>
+                <p className={`text-xs mt-0.5 tabular-nums ${active ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {formatCurrency(amount)}
+                </p>
+              </div>
+            </div>
+          )
+        })}
       </div>
+
+      {allZero ? (
+        <div className="flex items-start gap-3 rounded-xl border border-green-500/20 bg-green-500/5 px-4 py-3">
+          <CheckCircle size={16} className="text-green-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-green-300">
+              Excelente! <span className="font-normal text-gray-400">Não há divergências no período selecionado.</span>
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Continue assim e mantenha seus dados sempre conciliados.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
+          <AlertTriangle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-300">
+              Divergências detectadas <span className="font-normal text-gray-400">no período selecionado.</span>
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Revise as ocorrências e corrija as inconsistências encontradas.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── Quick actions ─────────────────────────────────────────────────────────────
+// ─── Quick Actions ─────────────────────────────────────────────────────────────
 
 const QUICK_ACTIONS = [
-  { icon: <Download size={18} />,      bg: 'bg-indigo-500/15', color: '#818cf8', title: 'Importar extrato',    sub: 'Envie seu extrato bancário.',      to: '/import' },
-  { icon: <FileText size={18} />,      bg: 'bg-cyan-500/15',   color: '#22d3ee', title: 'Gerar relatório',     sub: 'Baixe em PDF ou Excel.',           to: '/reports' },
-  { icon: <AlertTriangle size={18} />, bg: 'bg-orange-500/15', color: '#f97316', title: 'Ver divergências',    sub: 'Analise e resolva pendências.',     to: '/reconciliations?filter=divergent' },
-  { icon: <Bell size={18} />,          bg: 'bg-amber-500/15',   color: '#fbbf24', title: 'Configurar alertas',  sub: 'Receba avisos importantes.',       to: '/alerts' },
+  { icon: <Download size={18}/>, bg: 'bg-indigo-500/15', color: '#818cf8', title: 'Importar extrato',   sub: 'Traga seu extrato bancário',  to: '/import' },
+  { icon: <FileText size={18}/>, bg: 'bg-cyan-500/15',   color: '#22d3ee', title: 'Gerar relatório',    sub: 'Baixe em PDF ou Excel',       to: '/reports' },
+  { icon: <AlertTriangle size={18}/>, bg: 'bg-orange-500/15', color: '#f97316', title: 'Ver divergências', sub: 'Analise e resolva pendências', to: '/reconciliations?filter=divergent' },
+  { icon: <Bell size={18}/>,     bg: 'bg-amber-500/15',  color: '#fbbf24', title: 'Configurar alertas', sub: 'Receba avisos importantes',    to: '/alerts' },
 ]
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const [fromDate, setFromDate]           = useState(todayISO)
-  const [toDate,   setToDate]             = useState(todayISO)
+  const [fromDate, setFromDate] = useState(todayISO)
+  const [toDate,   setToDate]   = useState(todayISO)
   const [verdictDismissed, setVerdictDismissed] = useState(false)
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey:       ['dashboard-overview', fromDate, toDate],
-    queryFn:        () => dashboardService.getOverview({ fromDate, toDate }),
-    staleTime:      20_000,
+    queryKey:        ['dashboard-overview', fromDate, toDate],
+    queryFn:         () => dashboardService.getOverview({ fromDate, toDate }),
+    staleTime:       20_000,
     refetchInterval: 60_000,
   })
 
@@ -287,78 +248,100 @@ export function DashboardPage() {
   if (isError)   return <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
   if (!data)     return null
 
-  const s      = data.summary
-  const ri     = s.reconciliationIssues
-  const isOk   = (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid + ri.invalidReference) === 0
+  const s    = data.summary
+  const prev = data.previousPeriodSummary
+  const ri   = s.reconciliationIssues
+
   const recvAmt = s.totalReceivedAmount
   const divAmt  = effectiveDivergenceAmount(s)
   const expAmt  = Math.max(0, recvAmt - divAmt)
-  const issueAmts = sumsFromRecent(data.recentReconciliations, s)
-  const nonFinancialIssuesOnly = !isOk && divAmt === 0
+  const isOk    = (ri.amountMismatch + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid + ri.invalidReference) === 0
+
+  // ── Sparklines from flux ────────────────────────────────────────────────────
+  const spExp  = sparkFromSeries(data.fluxSeries, 'expected')
+  const spRecv = sparkFromSeries(data.fluxSeries, 'received')
+  const spDiv  = sparkFromSeries(data.fluxSeries, 'divergent')
+
+  // ── Trend percentages ───────────────────────────────────────────────────────
+  const prevExpAmt  = Math.max(0, prev.totalReceivedAmount - effectiveDivergenceAmount(prev))
+  const prevRecvAmt = prev.totalReceivedAmount
+  const prevDivAmt  = effectiveDivergenceAmount(prev)
+
+  // ── Issue amounts ────────────────────────────────────────────────────────────
+  const recentR = data.recentReconciliations
+  const sumPaid = (st: ReconciliationStatus) =>
+    recentR.filter(r => r.status === st).reduce((acc, r) => acc + r.paidAmount, 0)
+
+  const issueAmts = {
+    amountMismatch:       s.totalDivergentAmount,
+    duplicatePayment:     sumPaid('DuplicatePayment'),
+    paymentWithoutCharge: sumPaid('PaymentWithoutCharge'),
+    expiredChargePaid:    sumPaid('ExpiredChargePaid'),
+  }
 
   return (
     <div className="space-y-5">
 
-      {/* Header */}
+      {/* ── Header ───────────────────────────────────────────────────────────── */}
       <DashboardHeader
         title="Dashboard"
         subtitle="Visão geral da conciliação financeira em tempo real"
         fromDate={fromDate} toDate={toDate}
         updatedAt={data.updatedAt}
-        onFromDateChange={setFromDate}
-        onToDateChange={setToDate}
+        onFromDateChange={v => { setFromDate(v); setVerdictDismissed(false) }}
+        onToDateChange={v => { setToDate(v); setVerdictDismissed(false) }}
       />
 
-      {/* 1 — Verdict */}
+      {/* ── Row 1: Verdict + KPI cards ──────────────────────────────────────── */}
       {!verdictDismissed && (
-        <VerdictBlock
-          isOk={isOk}
-          divergentAmt={divAmt}
-          receivedAmt={recvAmt}
-          expectedAmt={expAmt}
-          fluxSeries={data.fluxSeries}
-          nonFinancialIssuesOnly={nonFinancialIssuesOnly}
-          onDismiss={() => setVerdictDismissed(true)}
-        />
-      )}
-
-      {/* 2 — Problems + Chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* Problems */}
-        <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-200">Resumo das divergências</h2>
-            <Link to="/reconciliations?filter=divergent"
-              className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-              Ver todas as divergências <ArrowRight size={12} />
-            </Link>
+        <div className="grid grid-cols-12 gap-4">
+          {/* Verdict */}
+          <div className="col-span-12 lg:col-span-4">
+            <VerdictCard isOk={isOk} divergentAmt={divAmt} />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {PROBLEM_DEFS.map(p => (
-              <ProblemCard
-                key={p.key}
-                icon={p.icon}
-                color={p.color}
-                bg={p.bg}
-                count={ri[p.key as keyof typeof ri] as number}
-                label={p.label}
-                amount={issueAmts[p.key]}
-              />
-            ))}
+
+          {/* KPI cards */}
+          <div className="col-span-12 lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <DashboardKpiCard
+              title="Total esperado"
+              value={formatCurrency(expAmt)}
+              subtitle="Valor das vendas"
+              sparkValues={spExp}
+              lineColor="#38bdf8"
+              trendPct={trendPct(expAmt, prevExpAmt)}
+            />
+            <DashboardKpiCard
+              title="Total recebido"
+              value={formatCurrency(recvAmt)}
+              subtitle="Valor que entrou"
+              sparkValues={spRecv}
+              lineColor="#22c55e"
+              trendPct={trendPct(recvAmt, prevRecvAmt)}
+            />
+            <DashboardKpiCard
+              title="Diferença"
+              value={formatCurrency(divAmt)}
+              subtitle={isOk ? 'Sem divergências' : 'Valor em divergência'}
+              sparkValues={spDiv}
+              lineColor={isOk ? '#8b5cf6' : '#ef4444'}
+              trendPct={trendPct(divAmt, prevDivAmt)}
+            />
           </div>
         </div>
+      )}
 
-        {/* Chart */}
+      {/* ── Row 2: Divergences + Chart ──────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <DivergenceSummary ri={ri} amounts={issueAmts} />
         <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 flex flex-col">
           <FluxFinanceiroLineChart fluxSeries={data.fluxSeries} summary={s} />
         </div>
       </div>
 
-      {/* 3 — Tables */}
+      {/* ── Row 3: Tables ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-        {/* Reconciliations */}
+        {/* Últimas conciliações */}
         <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
             <h2 className="text-sm font-semibold text-gray-200">Últimas conciliações</h2>
@@ -367,15 +350,12 @@ export function DashboardPage() {
               Ver todas
             </Link>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
-                  {['STATUS', 'REFERÊNCIA', 'ESPERADO', 'PAGO', 'DIFERENÇA', 'DATA', ''].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                      {h}
-                    </th>
+                  {['STATUS', 'REFERÊNCIA', 'ESPERADO', 'RECEBIDO', 'DIFERENÇA', 'DATA', ''].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -384,25 +364,19 @@ export function DashboardPage() {
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-600">Nenhuma conciliação no período.</td></tr>
                 ) : data.recentReconciliations.map(r => {
                   const diff     = r.expectedAmount != null ? r.paidAmount - r.expectedAmount : null
-                  const diffText = diff == null ? '—'
-                    : diff === 0 ? formatCurrency(0)
-                    : `${diff > 0 ? '+' : ''}${formatCurrency(diff)}`
-                  const diffCls  = diff == null ? 'text-gray-600'
-                    : diff === 0 ? 'text-green-400'
-                    : 'text-red-400'
+                  const diffText = diff == null ? '—' : diff === 0 ? formatCurrency(0) : `${diff > 0 ? '+' : ''}${formatCurrency(diff)}`
+                  const diffCls  = diff == null ? 'text-gray-600' : diff === 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'
                   return (
                     <tr key={r.id} className="border-b border-gray-800/50 hover:bg-gray-800/25 transition-colors">
                       <td className="px-4 py-3"><Badge status={r.status} /></td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-400 max-w-[130px] truncate">
-                        {r.chargeReferenceId ?? <span className="text-gray-600 not-italic">PIX sem venda</span>}
+                        {r.chargeReferenceId ?? <span className="text-gray-600 font-sans">PIX sem venda</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                         {r.expectedAmount != null ? formatCurrency(r.expectedAmount) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums">
-                        {formatCurrency(r.paidAmount)}
-                      </td>
-                      <td className={`px-4 py-3 text-xs font-bold tabular-nums ${diffCls}`}>{diffText}</td>
+                      <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums">{formatCurrency(r.paidAmount)}</td>
+                      <td className={`px-4 py-3 text-xs tabular-nums ${diffCls}`}>{diffText}</td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtShort(r.createdAt)}</td>
                       <td className="pr-3"><ChevronRight size={13} className="text-gray-700" /></td>
                     </tr>
@@ -411,7 +385,6 @@ export function DashboardPage() {
               </tbody>
             </table>
           </div>
-
           <div className="px-5 py-3 border-t border-gray-800">
             <Link to="/reconciliations" className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               Ver todas as conciliações <ArrowRight size={12} />
@@ -419,24 +392,21 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Payment events */}
+        {/* Últimos eventos de pagamento */}
         <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
             <h2 className="text-sm font-semibold text-gray-200">Últimos eventos de pagamento</h2>
             <Link to="/payment-events"
               className="text-xs text-indigo-400 hover:text-indigo-300 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition-colors">
-              Ver todas
+              Ver todos
             </Link>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
                   {['EVENTO', 'REFERÊNCIA', 'VALOR', 'PROVEDOR', 'STATUS', 'RECEBIDO EM'].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                      {h}
-                    </th>
+                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -445,17 +415,11 @@ export function DashboardPage() {
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-600">Nenhum evento de pagamento no período.</td></tr>
                 ) : data.recentPaymentEvents.map(e => (
                   <tr key={e.eventId} className="border-b border-gray-800/50 hover:bg-gray-800/25 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-400 max-w-[100px] truncate" title={e.eventId}>
-                      {e.eventId.slice(0, 18)}…
+                    <td className="px-4 py-3 text-xs text-gray-400">PIX recebido</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-300 max-w-[120px] truncate" title={e.referenceId ?? e.eventId}>
+                      {e.referenceId ?? e.eventId.slice(0, 16)}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs max-w-[130px] truncate">
-                      {e.referenceId
-                        ? <span className="text-gray-300">{e.referenceId}</span>
-                        : <span className="text-gray-600">PIX sem venda</span>}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums text-right">
-                      {formatCurrency(e.paidAmount)}
-                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums text-right">{formatCurrency(e.paidAmount)}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">{e.provider}</td>
                     <td className="px-4 py-3"><Badge status={e.status} /></td>
                     <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtShort(e.paidAt)}</td>
@@ -464,7 +428,6 @@ export function DashboardPage() {
               </tbody>
             </table>
           </div>
-
           <div className="px-5 py-3 border-t border-gray-800">
             <Link to="/payment-events" className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               Ver todos os eventos <ArrowRight size={12} />
@@ -473,7 +436,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 — Quick actions */}
+      {/* ── Row 4: Quick Actions ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_1fr_1fr_1fr] items-center gap-3">
         <p className="text-sm font-semibold text-gray-400 whitespace-nowrap">Ações rápidas</p>
         {QUICK_ACTIONS.map(a => (
