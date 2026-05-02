@@ -11,15 +11,21 @@ import {
   CalendarDays,
   TrendingUp,
   AlertTriangle,
+  Users,
+  Shield,
+  Eye,
+  Trash2,
+  ChevronDown,
 } from 'lucide-react'
 import { Header } from '../components/layout/Header'
 import { LoadingState } from '../components/ui/LoadingState'
 import { ErrorState } from '../components/ui/ErrorState'
 import { settingsService } from '../services/settingsService'
 import { dashboardService } from '../services/dashboardService'
+import { organizationsService } from '../services/organizationsService'
 import { formatCurrency, formatDateTime } from '../lib/formatters'
 import { useAuth } from '../contexts/AuthContext'
-import type { ClosingReport, UpdateAlertConfigRequest } from '../types'
+import type { ClosingReport, MemberDto, UpdateAlertConfigRequest } from '../types'
 
 function toInputDate(date: Date) {
   const yyyy = date.getFullYear()
@@ -321,15 +327,154 @@ function AlertConfigSection() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+const ROLE_META: Record<string, { label: string; icon: JSX.Element | null; color: string }> = {
+  Owner:  { label: 'Proprietário', icon: <Shield size={13} />,  color: 'text-amber-400' },
+  Admin:  { label: 'Administrador', icon: <Shield size={13} />, color: 'text-indigo-400' },
+  Member: { label: 'Membro',        icon: <Users  size={13} />, color: 'text-green-400' },
+  Viewer: { label: 'Visualizador',  icon: <Eye    size={13} />, color: 'text-gray-400' },
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const meta = ROLE_META[role] ?? { label: role, icon: null, color: 'text-gray-400' }
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${meta.color}`}>
+      {meta.icon}{meta.label}
+    </span>
+  )
+}
+
+function MemberRow({ member, isSelf, isOwner }: { member: MemberDto; isSelf: boolean; isOwner: boolean }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+
+  const updateRole = useMutation({
+    mutationFn: (role: string) => organizationsService.updateMemberRole(member.userId, role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['org-members'] }),
+  })
+
+  const remove = useMutation({
+    mutationFn: () => organizationsService.removeMember(member.userId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['org-members'] }),
+  })
+
+  const editable = !isSelf && member.role !== 'Owner' && isOwner
+  const initials = member.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+
+  return (
+    <div className="flex items-center gap-3 py-3 px-4 border-b border-gray-800/60 last:border-0">
+      <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center flex-shrink-0">
+        <span className="text-[11px] font-bold text-indigo-400">{initials}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-200 truncate">
+          {member.name} {isSelf && <span className="text-xs text-gray-500 font-normal">(você)</span>}
+        </p>
+        <p className="text-xs text-gray-500 truncate">{member.email}</p>
+      </div>
+
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {editable ? (
+          <div className="relative">
+            <button
+              onClick={() => setOpen(v => !v)}
+              onBlur={() => setTimeout(() => setOpen(false), 150)}
+              disabled={updateRole.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-700 bg-gray-800 text-xs text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              <RoleBadge role={member.role} />
+              <ChevronDown size={11} />
+            </button>
+            {open && (
+              <div className="absolute right-0 top-full mt-1 w-40 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-10 overflow-hidden">
+                {(['Admin', 'Member', 'Viewer'] as const).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => { updateRole.mutate(r); setOpen(false) }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors ${
+                      r === member.role ? 'bg-indigo-500/10 text-indigo-400' : 'text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    <RoleBadge role={r} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <RoleBadge role={member.role} />
+        )}
+
+        {editable && (
+          <button
+            onClick={() => { if (confirm(`Remover ${member.name} da organização?`)) remove.mutate() }}
+            disabled={remove.isPending}
+            title="Remover membro"
+            className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MembersSection() {
+  const { user, currentOrg } = useAuth()
+  const isOwnerOrAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
+  const isOwner = currentOrg?.role === 'Owner'
+
+  const { data: members = [], isLoading } = useQuery<MemberDto[]>({
+    queryKey: ['org-members'],
+    queryFn: () => organizationsService.getMembers(),
+    enabled: isOwnerOrAdmin,
+    staleTime: 30_000,
+  })
+
+  if (!isOwnerOrAdmin) return null
+
+  return (
+    <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-800">
+        <Users size={16} className="text-indigo-400" />
+        <div>
+          <h2 className="text-sm font-semibold text-gray-200">Membros da organização</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Gerencie papéis e acessos dos membros</p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="px-4 py-8 text-center text-sm text-gray-500">Carregando membros…</div>
+      ) : members.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-gray-500">Nenhum membro encontrado.</div>
+      ) : (
+        <div>
+          {members.map(m => (
+            <MemberRow
+              key={m.userId}
+              member={m}
+              isSelf={m.userId === user?.id}
+              isOwner={isOwner}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function SettingsPage() {
   return (
     <div>
       <Header
         title="Configurações"
-        subtitle="Fechamento financeiro e notificações proativas de divergência"
+        subtitle="Fechamento financeiro, notificações e membros da organização"
       />
       <ClosingReportSection />
       <AlertConfigSection />
+      <MembersSection />
     </div>
   )
 }

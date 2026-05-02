@@ -16,7 +16,8 @@ public sealed class ReviewJoinRequestUseCase(
         Guid reviewerUserId,
         Guid reviewerOrgId,
         bool accept,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? assignedRole = null)
     {
         var req = await joinRequests.GetByIdAsync(requestId, ct)
             ?? throw new KeyNotFoundException("Solicitação não encontrada.");
@@ -29,9 +30,12 @@ public sealed class ReviewJoinRequestUseCase(
 
         if (accept)
         {
+            var role = assignedRole is OrgRoles.Admin or OrgRoles.Member or OrgRoles.Viewer
+                ? assignedRole
+                : OrgRoles.Member;
+
             req.Accept(reviewerUserId);
-            // Adiciona o usuário como membro da organização
-            var member = OrganizationMember.Create(req.OrganizationId, req.UserId, OrgRoles.Member);
+            var member = OrganizationMember.Create(req.OrganizationId, req.UserId, role);
             await orgs.AddMemberAsync(member, ct);
         }
         else

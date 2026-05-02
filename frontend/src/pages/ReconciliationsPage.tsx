@@ -366,15 +366,26 @@ const STATUS_OPTIONS: { value: ReconciliationStatus; label: string }[] = [
   { value: 'ProcessingError',      label: 'Erro de proc.' },
 ]
 
+const DIVERGENT_STATUSES: ReconciliationStatus[] = [
+  'AmountMismatch', 'DuplicatePayment', 'PaymentWithoutCharge', 'ExpiredChargePaid', 'InvalidReference', 'ProcessingError',
+]
+
 export function ReconciliationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab]               = useState<Tab>('overview')
   const [fromDate, setFromDate]     = useState(sevenDaysAgoISO)
   const [toDate, setToDate]         = useState(todayISO)
-  const [statusFilter, setStatus]   = useState<ReconciliationStatus | ''>('')
   const [page, setPage]             = useState(1)
   const [pageSize, setPageSize]     = useState(10)
   const [aiTarget, setAiTarget]     = useState<{ id: string; status: ReconciliationStatus } | null>(null)
-  const [, setSearchParams]         = useSearchParams()
+
+  // ?filter=divergent pré-seleciona o primeiro status divergente; ?status=X seleciona um específico
+  const filterParam  = searchParams.get('filter')
+  const statusParam  = searchParams.get('status') as ReconciliationStatus | null
+  const initialStatus: ReconciliationStatus | '' =
+    statusParam ?? (filterParam === 'divergent' ? 'AmountMismatch' : '')
+
+  const [statusFilter, setStatus] = useState<ReconciliationStatus | ''>(initialStatus)
 
   // ── Data ─────────────────────────────────────────────────────────────────────
 
@@ -390,9 +401,16 @@ export function ReconciliationsPage() {
     staleTime: 20_000,
   })
 
+  const isDivergentMode = filterParam === 'divergent' && !statusParam
+  const effectiveStatus = isDivergentMode ? undefined : (statusFilter || undefined)
+
   const { data: reconData, isLoading: reconLoading } = useQuery({
-    queryKey: ['reconciliations-enriched', statusFilter, fromDate, toDate, page, pageSize],
-    queryFn:  () => reconciliationsService.listEnriched({ status: statusFilter || undefined, fromDate, toDate, page, pageSize }),
+    queryKey: ['reconciliations-enriched', effectiveStatus, isDivergentMode, fromDate, toDate, page, pageSize],
+    queryFn:  () => reconciliationsService.listEnriched({
+      status: effectiveStatus,
+      divergentOnly: isDivergentMode || undefined,
+      fromDate, toDate, page, pageSize,
+    }),
     staleTime: 30_000,
   })
 

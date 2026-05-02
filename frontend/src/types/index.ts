@@ -186,6 +186,14 @@ export interface JoinRequestDto {
   reviewedAt:  string | null
 }
 
+export interface MemberDto {
+  userId:   string
+  name:     string
+  email:    string
+  role:     string
+  joinedAt: string
+}
+
 export interface AuthResponse {
   token:              string
   user:               UserDto

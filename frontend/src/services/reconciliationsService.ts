@@ -3,6 +3,7 @@ import type { PagedResult, ReconciliationListParams, ReconciliationResult, Recen
 
 export interface EnrichedReconciliationParams {
   status?: string
+  divergentOnly?: boolean
   fromDate?: string
   toDate?: string
   page?: number

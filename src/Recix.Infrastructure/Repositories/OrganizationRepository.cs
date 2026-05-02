@@ -30,6 +30,13 @@ public sealed class OrganizationRepository(RecixDbContext db) : IOrganizationRep
           .OrderBy(m => m.JoinedAt)
           .ToListAsync(ct);
 
+    public Task<List<OrganizationMember>> GetMembersByOrgAsync(Guid orgId, CancellationToken ct = default) =>
+        db.OrganizationMembers
+          .Include(m => m.User)
+          .Where(m => m.OrganizationId == orgId)
+          .OrderBy(m => m.JoinedAt)
+          .ToListAsync(ct);
+
     public Task<OrganizationMember?> GetMembershipAsync(Guid orgId, Guid userId, CancellationToken ct = default) =>
         db.OrganizationMembers
           .Include(m => m.Organization)

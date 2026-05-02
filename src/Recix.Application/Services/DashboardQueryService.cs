@@ -176,16 +176,30 @@ public sealed class DashboardQueryService(
         }).ToList();
     }
 
+    private static readonly ReconciliationStatus[] DivergentStatuses =
+    [
+        ReconciliationStatus.AmountMismatch,
+        ReconciliationStatus.DuplicatePayment,
+        ReconciliationStatus.PaymentWithoutCharge,
+        ReconciliationStatus.ExpiredChargePaid,
+        ReconciliationStatus.InvalidReference,
+        ReconciliationStatus.ProcessingError,
+    ];
+
     public async Task<PagedResult<RecentReconciliationDto>> GetReconciliationsListAsync(
         ReconciliationStatus? status,
         DateTime? fromDate,
         DateTime? toDate,
         int page,
         int pageSize,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool divergentOnly = false)
     {
         var reconPage = await reconciliations.ListAsync(status, null, null, 1, int.MaxValue, ct);
         var filtered = reconPage.Items.AsEnumerable();
+
+        if (divergentOnly && status is null)
+            filtered = filtered.Where(r => DivergentStatuses.Contains(r.Status));
 
         if (fromDate.HasValue)
             filtered = filtered.Where(r => r.CreatedAt.Date >= fromDate.Value.ToUniversalTime().Date);

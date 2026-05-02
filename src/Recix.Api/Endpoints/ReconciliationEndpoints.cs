@@ -47,6 +47,7 @@ public static class ReconciliationEndpoints
     private static async Task<IResult> ListEnrichedReconciliations(
         DashboardQueryService queryService,
         [FromQuery] string? status,
+        [FromQuery] bool? divergentOnly,
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
         [FromQuery] int page = 1,
@@ -54,7 +55,7 @@ public static class ReconciliationEndpoints
         CancellationToken ct = default)
     {
         ReconciliationStatus? statusEnum = Enum.TryParse<ReconciliationStatus>(status, true, out var parsed) ? parsed : null;
-        var result = await queryService.GetReconciliationsListAsync(statusEnum, fromDate, toDate, page, pageSize, ct);
+        var result = await queryService.GetReconciliationsListAsync(statusEnum, fromDate, toDate, page, pageSize, ct, divergentOnly is true);
         return Results.Ok(result);
     }
 }

@@ -36,6 +36,26 @@ public static class OrganizationEndpoints
             .Produces<List<OrgSearchDto>>()
             .AllowAnonymous();
 
+        group.MapGet("/members", GetMembers)
+            .WithName("GetOrganizationMembers")
+            .WithSummary("Lista membros da organização atual")
+            .Produces<List<MemberDto>>()
+            .RequireAuthorization();
+
+        group.MapPatch("/members/{userId:guid}/role", UpdateMemberRole)
+            .WithName("UpdateMemberRole")
+            .WithSummary("Altera o papel de um membro na organização")
+            .Produces<MemberDto>()
+            .Produces(StatusCodes.Status404NotFound)
+            .RequireAuthorization();
+
+        group.MapDelete("/members/{userId:guid}", RemoveMember)
+            .WithName("RemoveMember")
+            .WithSummary("Remove um membro da organização")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status403Forbidden)
+            .RequireAuthorization();
+
         group.MapGet("/join-requests/pending", GetPendingJoinRequests)
             .WithName("GetPendingJoinRequests")
             .WithSummary("Lista solicitações de acesso pendentes na org atual")
@@ -134,6 +154,86 @@ public static class OrganizationEndpoints
         }).ToList());
     }
 
+    private static async Task<IResult> GetMembers(
+        HttpContext ctx,
+        IOrganizationRepository orgs,
+        CancellationToken ct)
+    {
+        var orgId   = GetCurrentOrgId(ctx);
+        if (orgId == Guid.Empty) return Results.Unauthorized();
+
+        var members = await orgs.GetMembersByOrgAsync(orgId, ct);
+        var dtos = members.Select(m => new MemberDto
+        {
+            UserId   = m.UserId,
+            Name     = m.User?.Name ?? "",
+            Email    = m.User?.Email ?? "",
+            Role     = m.Role,
+            JoinedAt = m.JoinedAt,
+        }).ToList();
+
+        return Results.Ok(dtos);
+    }
+
+    private static async Task<IResult> UpdateMemberRole(
+        Guid userId,
+        [FromBody] UpdateMemberRoleBody body,
+        HttpContext ctx,
+        IOrganizationRepository orgs,
+        CancellationToken ct)
+    {
+        var orgId      = GetCurrentOrgId(ctx);
+        var requesterId = GetUserId(ctx);
+
+        if (userId == requesterId)
+            return Results.BadRequest("Você não pode alterar seu próprio papel.");
+
+        if (body.Role is not (OrgRoles.Admin or OrgRoles.Member or OrgRoles.Viewer))
+            return Results.BadRequest($"Role inválido: '{body.Role}'.");
+
+        var member = await orgs.GetMembershipAsync(orgId, userId, ct);
+        if (member is null) return Results.NotFound("Membro não encontrado.");
+
+        if (member.Role == OrgRoles.Owner)
+            return Results.BadRequest("O papel do proprietário não pode ser alterado.");
+
+        member.ChangeRole(body.Role);
+        await orgs.UpdateMemberAsync(member, ct);
+
+        return Results.Ok(new MemberDto
+        {
+            UserId   = member.UserId,
+            Name     = member.User?.Name ?? "",
+            Email    = member.User?.Email ?? "",
+            Role     = member.Role,
+            JoinedAt = member.JoinedAt,
+        });
+    }
+
+    private static async Task<IResult> RemoveMember(
+        Guid userId,
+        HttpContext ctx,
+        IOrganizationRepository orgs,
+        CancellationToken ct)
+    {
+        var orgId      = GetCurrentOrgId(ctx);
+        var requesterId = GetUserId(ctx);
+
+        if (userId == requesterId)
+            return Results.BadRequest("Você não pode se remover da organização.");
+
+        var member = await orgs.GetMembershipAsync(orgId, userId, ct);
+        if (member is null) return Results.NotFound("Membro não encontrado.");
+
+        if (member.Role == OrgRoles.Owner)
+            return Results.Forbid();
+
+        await orgs.RemoveMemberAsync(member, ct);
+        return Results.NoContent();
+    }
+
+    private sealed record UpdateMemberRoleBody(string Role);
+
     private static async Task<IResult> GetPendingJoinRequests(
         HttpContext ctx,
         IOrganizationJoinRequestRepository joinRequests,
@@ -179,15 +279,18 @@ public static class OrganizationEndpoints
 
     private static async Task<IResult> AcceptJoinRequest(
         Guid id,
+        [FromBody] AcceptJoinRequestBody? body,
         HttpContext ctx,
         ReviewJoinRequestUseCase useCase,
         CancellationToken ct)
     {
         var reviewerId = GetUserId(ctx);
         var orgId      = GetCurrentOrgId(ctx);
-        var result     = await useCase.ExecuteAsync(id, reviewerId, orgId, accept: true, ct);
+        var result     = await useCase.ExecuteAsync(id, reviewerId, orgId, accept: true, ct, body?.Role);
         return Results.Ok(result);
     }
+
+    private sealed record AcceptJoinRequestBody(string? Role);
 
     private static async Task<IResult> RejectJoinRequest(
         Guid id,

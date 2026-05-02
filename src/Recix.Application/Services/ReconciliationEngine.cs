@@ -34,13 +34,38 @@ public sealed class ReconciliationEngine
 
         var orgId = paymentEvent.OrganizationId;
 
-        // Duplicate: charge already settled
-        if (charge.Status == ChargeStatus.Paid || charge.Status == ChargeStatus.Divergent)
+        // Duplicate: charge already Paid → definitive duplicate
+        if (charge.Status == ChargeStatus.Paid)
         {
             var result = ReconciliationResult.Create(
                 orgId, charge.Id, paymentEvent.Id,
                 ReconciliationStatus.DuplicatePayment,
-                $"Cobrança já está com status {charge.Status}. Pagamento duplicado ignorado.",
+                "Cobrança já conciliada. Pagamento duplicado.",
+                charge.Amount, paymentEvent.PaidAmount);
+
+            return new ReconciliationOutcome(result, null);
+        }
+
+        // Divergent + correct amount → re-reconcile (overrides previous AmountMismatch)
+        if (charge.Status == ChargeStatus.Divergent && paymentEvent.PaidAmount == charge.Amount)
+        {
+            charge.MarkAsPaid();
+            var result = ReconciliationResult.Create(
+                orgId, charge.Id, paymentEvent.Id,
+                ReconciliationStatus.Matched,
+                "Re-conciliado com sucesso após pagamento com valor correto.",
+                charge.Amount, paymentEvent.PaidAmount);
+
+            return new ReconciliationOutcome(result, charge);
+        }
+
+        // Divergent + still wrong amount → duplicate divergence
+        if (charge.Status == ChargeStatus.Divergent)
+        {
+            var result = ReconciliationResult.Create(
+                orgId, charge.Id, paymentEvent.Id,
+                ReconciliationStatus.DuplicatePayment,
+                $"Cobrança já marcada como divergente. Novo pagamento ({paymentEvent.PaidAmount:F2}) também diverge do esperado ({charge.Amount:F2}).",
                 charge.Amount, paymentEvent.PaidAmount);
 
             return new ReconciliationOutcome(result, null);

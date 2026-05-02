@@ -165,28 +165,34 @@ public sealed class ImportSalesUseCase(
 
     private async Task RequeueOrphanPaymentEventsAsync(Guid orgId, CancellationToken ct)
     {
+        // Reprocessa pagamentos sem cobrança E pagamentos com valor divergente —
+        // o novo import de vendas pode ter trazido a cobrança correta para eles.
         var orphans = await reconciliations.GetByStatusAndOrganizationAsync(
             ReconciliationStatus.PaymentWithoutCharge, orgId, ct);
 
-        if (orphans.Count == 0) return;
+        var mismatches = await reconciliations.GetByStatusAndOrganizationAsync(
+            ReconciliationStatus.AmountMismatch, orgId, ct);
 
-        logger.LogInformation("Re-conciliando {Count} payment event(s) órfão(s) após import de vendas.", orphans.Count);
+        var candidates = orphans.Concat(mismatches).ToList();
+        if (candidates.Count == 0) return;
 
-        foreach (var orphan in orphans)
+        logger.LogInformation("Re-conciliando {Count} payment event(s) candidato(s) após import de vendas.", candidates.Count);
+
+        foreach (var candidate in candidates)
         {
             try
             {
-                var evt = await paymentEvents.GetByIdAsync(orphan.PaymentEventId, ct);
+                var evt = await paymentEvents.GetByIdAsync(candidate.PaymentEventId, ct);
                 if (evt is null || evt.Status != PaymentEventStatus.Processed) continue;
 
-                await reconciliations.DeleteAsync(orphan.Id, ct);
+                await reconciliations.DeleteAsync(candidate.Id, ct);
                 evt.RequeueForReReconciliation();
                 await paymentEvents.UpdateAsync(evt, ct);
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Falha ao reenfileirar PaymentEvent {PaymentEventId} para re-conciliação.",
-                    orphan.PaymentEventId);
+                    candidate.PaymentEventId);
             }
         }
     }
