@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Recix.Application.DTOs;
+using Recix.Application.Interfaces;
 using Recix.Application.Services;
 
 namespace Recix.Application.UseCases;
@@ -10,12 +10,8 @@ namespace Recix.Application.UseCases;
 /// Retorna um preview estruturado que o frontend exibe para confirmação do usuário.
 /// Após aprovação, a importação real é feita pelos use cases existentes.
 /// </summary>
-public sealed class ImportPreviewUseCase
+public sealed class ImportPreviewUseCase(IChargeRepository charges)
 {
-    private static readonly Regex RecixReferencePattern = new(
-        @"^RECIX-\d{8}-\d{6}$",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     // ── Vendas (CSV) ──────────────────────────────────────────────────────────────
 
     public async Task<ImportPreviewResult> PreviewSalesAsync(Stream csvStream, string fileName, CancellationToken ct = default)
@@ -29,14 +25,16 @@ public sealed class ImportPreviewUseCase
             return EmptyResult(ImportType.Sales, fileName);
 
         var header     = SplitCsv(lines[0].ToLowerInvariant());
-        var idxValor   = FindColumn(header, "valor", "amount", "value");
-        var idxDescr   = FindColumn(header, "descricao", "descrição", "description", "memo", "item");
-        var idxData    = FindColumn(header, "data", "date", "datetime", "data_hora");
+        var idxValor     = FindColumn(header, "valor", "amount", "value");
+        var idxDescr     = FindColumn(header, "descricao", "descrição", "description", "memo", "item");
+        var idxData      = FindColumn(header, "data", "date", "datetime", "data_hora");
+        var idxReference = FindColumn(header, "reference", "referencia", "referência", "externalid", "txid", "id");
 
         var detected = new List<string>();
-        if (idxValor >= 0)   detected.Add("valor");
+        if (idxValor >= 0)     detected.Add("valor");
         if (idxDescr >= 0)   detected.Add("descricao");
         if (idxData  >= 0)   detected.Add("data");
+        if (idxReference >= 0) detected.Add("referencia");
 
         if (idxValor < 0 || idxDescr < 0)
         {
@@ -61,6 +59,10 @@ public sealed class ImportPreviewUseCase
         var result  = new List<ImportPreviewLine>();
         int ok = 0, warn = 0, err = 0;
 
+        var today        = DateTime.UtcNow.Date;
+        var baseRefCount = await charges.CountByDateAsync(today, ct);
+        var salesSeq     = 0;
+
         for (var i = 1; i < lines.Count; i++)
         {
             var raw = lines[i].Trim();
@@ -72,6 +74,7 @@ public sealed class ImportPreviewUseCase
             var amountRaw = cols.Length > idxValor ? cols[idxValor].Trim() : "";
             var descr     = cols.Length > idxDescr ? cols[idxDescr].Trim() : "";
             var dateRaw   = idxData >= 0 && cols.Length > idxData ? cols[idxData].Trim() : "";
+            var refRaw    = idxReference >= 0 && cols.Length > idxReference ? cols[idxReference].Trim() : "";
 
             if (!decimal.TryParse(amountRaw.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var amount) || amount < 0)
             {
@@ -106,6 +109,8 @@ public sealed class ImportPreviewUseCase
             }
 
             ok++;
+            salesSeq++;
+            var referencePreview = $"RECIX-{today:yyyyMMdd}-{(baseRefCount + salesSeq):D6}";
             result.Add(new ImportPreviewLine
             {
                 LineNumber  = lineNum,
@@ -113,6 +118,8 @@ public sealed class ImportPreviewUseCase
                 Amount      = amount,
                 Description = descr,
                 Date        = string.IsNullOrEmpty(dateRaw) ? "agora" : dateRaw,
+                Reference   = referencePreview,
+                EventId     = string.IsNullOrWhiteSpace(refRaw) ? null : refRaw,
             });
         }
 

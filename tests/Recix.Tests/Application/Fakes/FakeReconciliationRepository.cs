@@ -21,6 +21,18 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
     public Task<PagedResult<ReconciliationResult>> ListAsync(ReconciliationStatus? status, Guid? chargeId, Guid? paymentEventId, int page, int pageSize, CancellationToken ct = default) =>
         Task.FromResult(new PagedResult<ReconciliationResult> { Items = _store.ToList(), TotalCount = _store.Count, Page = page, PageSize = pageSize });
 
+    public Task<IReadOnlyList<ReconciliationResult>> ListByChargeIdsAsync(IReadOnlyList<Guid> chargeIds, CancellationToken ct = default)
+    {
+        if (chargeIds.Count == 0)
+            return Task.FromResult<IReadOnlyList<ReconciliationResult>>([]);
+
+        var set = chargeIds.ToHashSet();
+        var list = _store.Where(r => r.ChargeId.HasValue && set.Contains(r.ChargeId.Value))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<ReconciliationResult>>(list);
+    }
+
     public Task<IReadOnlyList<ReconciliationResult>> GetByStatusAndOrganizationAsync(ReconciliationStatus status, Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ReconciliationResult>>(
             _store.Where(r => r.Status == status && r.OrganizationId == organizationId).ToList());
@@ -39,6 +51,35 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
             _store.Where(r => r.OrganizationId == organizationId && r.RequiresReview && r.ReviewDecision == null)
                   .OrderByDescending(r => r.PaidAmount)
                   .ToList());
+
+    public Task<IReadOnlyList<PendingReviewItemDto>> ListPendingReviewDtosAsync(Guid organizationId, CancellationToken ct = default)
+    {
+        var rows = _store
+            .Where(r => r.OrganizationId == organizationId && r.RequiresReview && r.ReviewDecision == null)
+            .OrderByDescending(r => r.PaidAmount)
+            .Select(r => new PendingReviewItemDto
+            {
+                Id                   = r.Id,
+                Status               = r.Status.ToString(),
+                Confidence           = r.Confidence.ToString(),
+                MatchReason          = r.MatchReason.ToString(),
+                MatchedField         = r.MatchedField,
+                Reason               = r.Reason,
+                ChargeId             = r.ChargeId,
+                PaymentEventId       = r.PaymentEventId == Guid.Empty ? null : r.PaymentEventId,
+                ExpectedAmount       = r.ExpectedAmount,
+                PaidAmount           = r.PaidAmount,
+                CreatedAt            = r.CreatedAt,
+                ChargeReferenceId    = null,
+                ChargeExternalId     = null,
+                PaymentTransactionId = null,
+                PaymentReferenceId   = null,
+                PaymentProvider      = null,
+                PaymentPaidAt        = null,
+            })
+            .ToList();
+        return Task.FromResult<IReadOnlyList<PendingReviewItemDto>>(rows);
+    }
 
     public Task<int> CountPendingReviewAsync(Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult(_store.Count(r => r.OrganizationId == organizationId && r.RequiresReview && r.ReviewDecision == null));

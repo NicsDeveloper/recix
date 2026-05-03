@@ -19,6 +19,11 @@ public interface IReconciliationRepository
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Todos os resultados de conciliação ligados a qualquer uma das cobranças indicadas (escopo da org atual).</summary>
+    Task<IReadOnlyList<ReconciliationResult>> ListByChargeIdsAsync(
+        IReadOnlyList<Guid> chargeIds,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ReconciliationResult>> GetByStatusAndOrganizationAsync(
         ReconciliationStatus status,
         Guid organizationId,
@@ -29,6 +34,13 @@ public interface IReconciliationRepository
     /// ordenados por PaidAmount decrescente (maior impacto financeiro primeiro).
     /// </summary>
     Task<IReadOnlyList<ReconciliationResult>> GetPendingReviewAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lista pendentes de revisão com dados da cobrança e do pagamento para exibição na UI (uma consulta).
+    /// </summary>
+    Task<IReadOnlyList<PendingReviewItemDto>> ListPendingReviewDtosAsync(
         Guid organizationId,
         CancellationToken cancellationToken = default);
 

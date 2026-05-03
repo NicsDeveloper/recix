@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Download, Sparkles, GitMerge, ArrowRight,
   CheckCircle, AlertTriangle, Copy, Clock, Ban,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown,
   MoreVertical, Zap, CreditCard, Banknote, SlidersHorizontal,
-  Calendar, Eye, X, ThumbsUp, ThumbsDown, Info,
+  Calendar, Eye, X, ThumbsUp, ThumbsDown, Info, Circle, Check,
 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -17,7 +17,7 @@ import { reconciliationsService } from '../services/reconciliationsService'
 import { AiExplanationModal } from '../components/modals/AiExplanationModal'
 import { LoadingState } from '../components/ui/LoadingState'
 import { formatCurrency } from '../lib/formatters'
-import type { RecentReconciliation, ReconciliationStatus, FluxPoint, PendingReviewItem } from '../types'
+import type { ChargeReconciliationSummary, RecentReconciliation, ReconciliationStatus, FluxPoint, PendingReviewItem } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,6 +41,29 @@ function pctStr(part: number, total: number) {
 function isDivergent(status: ReconciliationStatus) {
   return ['AmountMismatch','PaymentExceedsExpected','DuplicatePayment','PaymentWithoutCharge','ChargeWithoutPayment',
           'ExpiredChargePaid','InvalidReference','ProcessingError','MultipleMatchCandidates'].includes(status)
+}
+
+const AGG_STATUS_PT: Record<string, string> = {
+  Conciliado: 'Conciliado',
+  Parcial: 'Parcial',
+  Divergente: 'Divergente',
+  EmRevisao: 'Em revisão',
+  SemAlocacao: 'Sem alocação',
+}
+
+function AggregateStatusBadge({ status }: { status: string }) {
+  const label = AGG_STATUS_PT[status] ?? status
+  const strong = status === 'Divergente' || status === 'EmRevisao'
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-bold border ${
+      strong ? 'bg-orange-500/20 text-orange-200 border-orange-500/40 ring-1 ring-orange-500/15'
+        : status === 'Conciliado' ? 'bg-green-500/15 text-green-300 border-green-500/30'
+          : status === 'Parcial' ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+            : 'bg-gray-700/50 text-gray-400 border-gray-600'
+    }`}>
+      {label}
+    </span>
+  )
 }
 
 // ─── Sparkline ────────────────────────────────────────────────────────────────
@@ -365,57 +388,72 @@ function FilterSelect({ label, value, options, onChange }: {
 // ─── Match Reason Labels ───────────────────────────────────────────────────────
 
 const MATCH_REASON_LABEL: Record<string, string> = {
-  ExactExternalChargeId:  'ID externo da cobrança (exato)',
-  ExactReferenceId:       'Código de referência (exato)',
-  ValueWithinTimeWindow:  'Valor + janela de 48h',
-  ValueFifo:              'Valor + FIFO (sem identificador)',
-  NoMatch:                'Nenhum candidato encontrado',
-  AlreadySettled:         'Cobrança já conciliada',
-  InvalidReference:       'Identificador não encontrado',
-  MultipleCandidates:     'Múltiplos candidatos — seleção manual necessária',
-  FoundWithAmountMismatch:'Cobrança encontrada, valor diferente',
-  FoundButExpired:        'Cobrança encontrada, mas expirada',
-  CumulativeSettlement:   'Soma de pagamentos completou o valor',
-  PaymentExceedsBalance:  'Pagamento excede saldo pendente',
+  ExactExternalChargeId:  'ID da cobrança no pagamento (exato)',
+  ExactReferenceId:         'Código RECIX / referência (exato)',
+  ValueWithinTimeWindow:  'Mesmo valor e data próxima',
+  ValueFifo:                'Mesmo valor — fila de cobranças pendentes',
+  NoMatch:                  'Nenhum candidato encontrado',
+  AlreadySettled:           'Cobrança já conciliada',
+  InvalidReference:         'Referência não encontrada',
+  MultipleCandidates:       'Várias cobranças possíveis',
+  FoundWithAmountMismatch:  'Cobrança encontrada, valor diferente',
+  FoundButExpired:          'Cobrança encontrada, mas expirada',
+  CumulativeSettlement:     'Soma de pagamentos completou o valor',
+  PaymentExceedsBalance:    'Pagamento excede saldo pendente',
 }
 
 const CONFIDENCE_LABEL: Record<string, { label: string; color: string }> = {
-  High:   { label: 'Alta confiança',   color: 'text-green-400' },
-  Medium: { label: 'Média confiança',  color: 'text-amber-400' },
-  Low:    { label: 'Baixa confiança',  color: 'text-red-400'   },
+  High:   { label: 'Alta confiança',        color: 'text-green-400' },
+  Medium: { label: 'Confirme se faz sentido', color: 'text-amber-300' },
+  Low:    { label: 'Confirme se faz sentido', color: 'text-amber-300' },
 }
 
-// ─── Match Trail (trilha de raciocínio do sistema) ─────────────────────────────
+function formatReviewDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
 
-function MatchTrail({ item }: { item: PendingReviewItem }) {
+function reviewGuidanceParagraph(item: PendingReviewItem): string {
+  if (item.matchReason === 'ValueFifo') {
+    return 'Os valores coincidem, mas o extrato não trouxe um identificador que amarre só a esta cobrança. O sistema sugeriu a cobrança pendente mais antiga com o mesmo valor. Confirme se este crédito no banco é realmente desta venda — e não de outra com o mesmo preço.'
+  }
+  if (item.matchReason === 'MultipleCandidates') {
+    return 'Há mais de uma cobrança que encaixa neste pagamento. Confirme qual delas recebeu este valor.'
+  }
+  if (item.matchReason === 'ValueWithinTimeWindow') {
+    return 'O sistema associou por valor e data próxima, sem código único. Confirme se a data do pagamento e o valor batem com o que sabe da venda.'
+  }
+  return item.reason || 'Confirme se o pagamento listado corresponde à cobrança sugerida.'
+}
+
+// ─── Trilha técnica (opcional, para auditoria) ────────────────────────────────
+
+function MatchTrailTechnical({ item }: { item: PendingReviewItem }) {
   const steps = [
-    { field: 'ExternalChargeId', tried: true,  success: item.matchReason === 'ExactExternalChargeId' },
-    { field: 'ReferenceId',      tried: true,  success: item.matchReason === 'ExactReferenceId' },
-    { field: 'Valor + 48h',      tried: item.matchReason !== 'ExactExternalChargeId' && item.matchReason !== 'ExactReferenceId',
-                                  success: item.matchReason === 'ValueWithinTimeWindow' },
-    { field: 'Valor + FIFO',     tried: item.matchReason === 'ValueFifo' || item.matchReason === 'MultipleCandidates',
-                                  success: item.matchReason === 'ValueFifo' },
+    { label: 'ID da cobrança no pagamento (PIX / gateway)', success: item.matchReason === 'ExactExternalChargeId' },
+    { label: 'Código RECIX ou referência na cobrança',     success: item.matchReason === 'ExactReferenceId' },
+    { label: 'Mesmo valor e data dentro da janela',        success: item.matchReason === 'ValueWithinTimeWindow' },
+    { label: 'Mesmo valor na fila de cobranças pendentes',  success: item.matchReason === 'ValueFifo' },
   ]
 
   return (
     <div className="space-y-2">
       {steps.map((s, i) => (
         <div key={i} className="flex items-center gap-2 text-xs">
-          <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${
-            !s.tried ? 'bg-gray-800 text-gray-600' :
-            s.success ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-            'bg-gray-800/60 text-gray-500'
-          }`}>
-            {!s.tried ? '·' : s.success ? '✓' : '✗'}
+          {s.success
+            ? <Check size={14} className="text-green-400 flex-shrink-0" strokeWidth={2.5} />
+            : <Circle size={12} className="text-gray-600 flex-shrink-0" />}
+          <span className={s.success ? 'text-gray-200' : 'text-gray-500'}>
+            {s.label}
+            {s.success && <span className="text-gray-600 font-normal"> — usado nesta sugestão</span>}
           </span>
-          <span className={s.tried ? (s.success ? 'text-green-400 font-medium' : 'text-gray-500') : 'text-gray-700'}>
-            {s.field}
-          </span>
-          {s.success && (
-            <span className="text-gray-600 text-[10px]">← usado neste match</span>
-          )}
         </div>
       ))}
+      <p className="text-[10px] text-gray-600 pt-1">
+        Campo técnico: {MATCH_REASON_LABEL[item.matchReason] ?? item.matchReason}
+      </p>
     </div>
   )
 }
@@ -449,7 +487,7 @@ function ReviewPanel({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <div className="flex items-center gap-2">
             <Eye size={16} className="text-amber-400" />
-            <h2 className="text-sm font-semibold text-gray-200">Revisar conciliação</h2>
+            <h2 className="text-sm font-semibold text-gray-200">Confirmar vínculo</h2>
           </div>
           <button onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
             <X size={15} />
@@ -457,65 +495,107 @@ function ReviewPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Status e confiança */}
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-            <p className="text-xs font-semibold text-amber-400 mb-1">Match de baixa confiança</p>
-            <p className={`text-sm font-bold ${confidence.color}`}>{confidence.label}</p>
-            <p className="text-xs text-gray-500 mt-1">{item.reason}</p>
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
+            <p className="text-xs font-semibold text-amber-300 mb-1.5">Sugestão do sistema — vale conferir</p>
+            <p className={`text-xs font-medium ${confidence.color} mb-2`}>{confidence.label}</p>
+            <p className="text-sm text-gray-300 leading-relaxed">{reviewGuidanceParagraph(item)}</p>
           </div>
 
-          {/* Valores */}
+          {/* Cobrança vs pagamento — base objectiva para o humano */}
           <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Valores</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">O que comparar</p>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
+                <p className="text-[10px] font-semibold text-indigo-300 uppercase tracking-wide mb-2">Cobrança (esperado)</p>
+                <dl className="space-y-1.5 text-xs">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">Valor</dt>
+                    <dd className="text-gray-200 font-semibold tabular-nums text-right">
+                      {item.expectedAmount != null ? formatCurrency(item.expectedAmount) : '—'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">Código</dt>
+                    <dd className="text-gray-200 font-mono text-[11px] text-right truncate" title={item.chargeReferenceId ?? ''}>
+                      {item.chargeReferenceId ?? '—'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">ID no ERP / arquivo</dt>
+                    <dd className="text-gray-400 font-mono text-[11px] text-right truncate" title={item.chargeExternalId ?? ''}>
+                      {item.chargeExternalId ?? '—'}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-3">
+                <p className="text-[10px] font-semibold text-emerald-300/90 uppercase tracking-wide mb-2">Pagamento (recebido)</p>
+                <dl className="space-y-1.5 text-xs">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">Valor</dt>
+                    <dd className="text-gray-200 font-semibold tabular-nums text-right">{formatCurrency(item.paidAmount)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">ID no extrato</dt>
+                    <dd className="text-gray-200 font-mono text-[11px] text-right truncate" title={item.paymentTransactionId ?? ''}>
+                      {item.paymentTransactionId ?? '—'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">Data do crédito</dt>
+                    <dd className="text-gray-400 text-right">{formatReviewDateTime(item.paymentPaidAt)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-gray-500 shrink-0">Origem</dt>
+                    <dd className="text-gray-400 text-right truncate" title={item.paymentProvider ?? ''}>
+                      {item.paymentProvider ?? '—'}
+                      {item.paymentReferenceId ? (
+                        <span className="block text-[10px] text-gray-500 mt-0.5 font-mono truncate" title={item.paymentReferenceId}>
+                          Ref.: {item.paymentReferenceId}
+                        </span>
+                      ) : null}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Resumo numérico</p>
             <div className="rounded-xl border border-gray-800 bg-gray-800/50 divide-y divide-gray-800">
               <div className="flex justify-between px-4 py-2.5 text-sm">
-                <span className="text-gray-400">Esperado</span>
-                <span className="font-semibold text-gray-200 tabular-nums">
-                  {item.expectedAmount != null ? formatCurrency(item.expectedAmount) : '—'}
+                <span className="text-gray-400">Diferença</span>
+                <span className={`font-bold tabular-nums ${diff == null ? 'text-gray-500' : diff === 0 ? 'text-green-400' : diff > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+                  {diff == null ? '—' : <>{diff > 0 ? '+' : ''}{formatCurrency(diff)}</>}
                 </span>
               </div>
-              <div className="flex justify-between px-4 py-2.5 text-sm">
-                <span className="text-gray-400">Recebido</span>
-                <span className="font-semibold text-gray-200 tabular-nums">{formatCurrency(item.paidAmount)}</span>
-              </div>
-              {diff != null && (
-                <div className="flex justify-between px-4 py-2.5 text-sm">
-                  <span className="text-gray-400">Diferença</span>
-                  <span className={`font-bold tabular-nums ${diff === 0 ? 'text-green-400' : diff > 0 ? 'text-orange-400' : 'text-red-400'}`}>
-                    {diff > 0 ? '+' : ''}{formatCurrency(diff)}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Trilha de matching */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Info size={13} className="text-gray-500" />
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Como o sistema tentou casar</p>
+          <details className="group rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+            <summary className="px-4 py-3 text-xs font-medium text-gray-400 cursor-pointer hover:text-gray-300 list-none flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Info size={13} className="text-gray-500" />
+                Detalhes técnicos (auditoria)
+              </span>
+              <span className="text-[10px] text-gray-600 group-open:hidden">mostrar</span>
+              <span className="text-[10px] text-gray-600 hidden group-open:inline">ocultar</span>
+            </summary>
+            <div className="px-4 pb-4 pt-0 border-t border-gray-800/80">
+              <MatchTrailTechnical item={item} />
             </div>
-            <div className="rounded-xl border border-gray-800 bg-gray-800/50 p-4">
-              <MatchTrail item={item} />
-              <div className="mt-3 pt-3 border-t border-gray-800">
-                <p className="text-xs text-gray-500">Campo usado:</p>
-                <p className="text-xs text-amber-400 font-medium mt-0.5">
-                  {MATCH_REASON_LABEL[item.matchReason] ?? item.matchReason}
-                </p>
-              </div>
-            </div>
-          </div>
+          </details>
 
-          {/* O que significa cada ação */}
           <div className="rounded-xl border border-gray-800 bg-gray-800/30 p-4 space-y-2">
-            <p className="text-xs font-semibold text-gray-400 mb-2">O que cada ação faz:</p>
+            <p className="text-xs font-semibold text-gray-400 mb-2">Ações</p>
             <div className="flex items-start gap-2 text-xs text-gray-500">
               <ThumbsUp size={12} className="text-green-400 mt-0.5 flex-shrink-0" />
-              <span><span className="text-green-400 font-medium">Confirmar</span> — o match se torna definitivo e a venda é marcada como paga.</span>
+              <span><span className="text-green-400 font-medium">Confirmar</span> — torna o vínculo definitivo e marca a cobrança como paga.</span>
             </div>
             <div className="flex items-start gap-2 text-xs text-gray-500">
               <ThumbsDown size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
-              <span><span className="text-red-400 font-medium">Rejeitar</span> — o match é descartado, a venda volta a pendente e o pagamento é reprocessado.</span>
+              <span><span className="text-red-400 font-medium">Rejeitar</span> — descarta esta sugestão; a cobrança volta a pendente e o pagamento pode ser casado de outra forma.</span>
             </div>
           </div>
         </div>
@@ -554,12 +634,19 @@ function PendingReviewTab() {
     staleTime: 30_000,
   })
 
+  function invalidateReconciliationViews() {
+    queryClient.invalidateQueries({ queryKey: ['pending-review'] })
+    queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+    // KPIs desta página vêm de closing-report + dashboard-overview (prefixo = qualquer intervalo de datas)
+    queryClient.invalidateQueries({ queryKey: ['closing-report'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+  }
+
   const confirm = useMutation({
     mutationFn: (id: string) => reconciliationsService.confirmMatch(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
-      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      invalidateReconciliationViews()
       setSelected(null)
     },
   })
@@ -567,8 +654,7 @@ function PendingReviewTab() {
   const reject = useMutation({
     mutationFn: (id: string) => reconciliationsService.rejectMatch(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
-      queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
+      invalidateReconciliationViews()
       setSelected(null)
     },
   })
@@ -611,7 +697,7 @@ function PendingReviewTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
-                {['TIPO', 'CONFIANÇA', 'CAMPO USADO', 'ESPERADO', 'RECEBIDO', 'DIFERENÇA', 'DATA', 'AÇÃO'].map(h => (
+                {['Situação', 'Revisão', 'Como casou', 'Esperado', 'Recebido', 'Diferença', 'Data', 'Ação'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -624,15 +710,17 @@ function PendingReviewTab() {
                 return (
                   <tr key={item.id} className="border-b border-gray-800/50 hover:bg-gray-800/25 transition-colors">
                     <td className="px-4 py-3">
-                      <span className="text-xs text-amber-400 font-medium">
-                        {item.status === 'MultipleMatchCandidates' ? 'Múltiplos candidatos' : 'Match incerto'}
+                      <span className="text-xs text-amber-300/90 font-medium">
+                        {item.status === 'MultipleMatchCandidates'
+                          ? 'Várias cobranças possíveis'
+                          : 'Mesmo valor — conferir se é esta venda'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs font-medium ${conf.color}`}>{conf.label}</span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[150px] truncate" title={MATCH_REASON_LABEL[item.matchReason]}>
-                      {item.matchedField ?? '—'}
+                    <td className="px-4 py-3 text-xs text-gray-400 max-w-[200px] truncate" title={MATCH_REASON_LABEL[item.matchReason] ?? item.matchReason}>
+                      {MATCH_REASON_LABEL[item.matchReason] ?? item.matchedField ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                       {item.expectedAmount != null ? formatCurrency(item.expectedAmount) : '—'}
@@ -692,7 +780,11 @@ const STATUS_OPTIONS: { value: ReconciliationStatus; label: string }[] = [
 export function ReconciliationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as Tab | 'review' | null
-  const [tab, setTab] = useState<Tab | 'review'>(tabParam === 'review' ? 'review' : 'overview')
+  const initialTab: Tab | 'review' =
+    tabParam === 'review' ? 'review'
+      : tabParam === 'by-charge' || tabParam === 'by-event' ? tabParam
+        : 'overview'
+  const [tab, setTab] = useState<Tab | 'review'>(initialTab)
   const [fromDate, setFromDate]     = useState(sevenDaysAgoISO)
   const [toDate, setToDate]         = useState(todayISO)
   const [page, setPage]             = useState(1)
@@ -706,6 +798,16 @@ export function ReconciliationsPage() {
     statusParam ?? (filterParam === 'divergent' ? 'AmountMismatch' : '')
 
   const [statusFilter, setStatus] = useState<ReconciliationStatus | ''>(initialStatus)
+
+  function goTab(next: Tab | 'review') {
+    setTab(next)
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev)
+      if (next === 'overview') n.delete('tab')
+      else n.set('tab', next)
+      return n
+    }, { replace: true })
+  }
 
   // ── Data ─────────────────────────────────────────────────────────────────────
 
@@ -743,7 +845,22 @@ export function ReconciliationsPage() {
     }),
     staleTime: 0,
     refetchInterval: false,
+    enabled: tab === 'overview' || tab === 'by-event',
   })
+
+  const [expandedCharge, setExpandedCharge] = useState<string | null>(null)
+
+  const { data: byChargeData, isLoading: byChargeLoading } = useQuery({
+    queryKey: ['charge-recon-summaries', fromDate, toDate, page, pageSize],
+    queryFn: () => dashboardService.getChargeReconciliationSummaries({ fromDate, toDate, page, pageSize }),
+    enabled: tab === 'by-charge',
+    staleTime: 0,
+  })
+
+  useEffect(() => {
+    setPage(1)
+    setExpandedCharge(null)
+  }, [tab])
 
   // ── Computed: KPI sparks from flux ────────────────────────────────────────────
 
@@ -813,7 +930,7 @@ export function ReconciliationsPage() {
   // ── Computed: Table row rendering ─────────────────────────────────────────────
 
   const items        = reconData?.items ?? []
-  const totalItems   = reconData?.totalCount ?? 0
+  const totalItems   = tab === 'by-charge' ? (byChargeData?.totalCount ?? 0) : (reconData?.totalCount ?? 0)
   const divergentCnt = items.filter(r => isDivergent(r.status)).length
 
   function handleStatusFilter(v: string) {
@@ -827,7 +944,7 @@ export function ReconciliationsPage() {
     })
   }
 
-  const isLoading = ovLoading || reconLoading
+  const isLoading = ovLoading || (tab === 'by-charge' ? byChargeLoading : reconLoading)
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -838,7 +955,14 @@ export function ReconciliationsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-gray-50">Conciliações</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Relacione o que foi esperado com o que foi recebido</p>
+          <p className="text-sm text-gray-500 mt-0.5 max-w-2xl">
+            Auditoria financeira: bate o que caiu no banco com o esperado, divergências e origem do evento.
+            {' '}
+            <Link to="/charges" className="text-indigo-400 hover:text-indigo-300 font-medium whitespace-nowrap">
+              Ir para cobranças (operacional)
+            </Link>
+            .
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-700 bg-gray-900 text-sm text-gray-300 hover:bg-gray-800 transition-colors font-medium">
@@ -860,19 +984,19 @@ export function ReconciliationsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
-        <button onClick={() => setTab('overview')}
+        <button onClick={() => goTab('overview')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'overview' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
           Visão geral
         </button>
-        <button onClick={() => setTab('by-charge')}
+        <button onClick={() => goTab('by-charge')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'by-charge' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
           Por cobrança
         </button>
-        <button onClick={() => setTab('by-event')}
+        <button onClick={() => goTab('by-event')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'by-event' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
           Por evento
         </button>
-        <button onClick={() => setTab('review')}
+        <button onClick={() => goTab('review')}
           className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${tab === 'review' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'}`}>
           <Eye size={13} />
           Revisão
@@ -923,46 +1047,97 @@ export function ReconciliationsPage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Tabela: visão geral = só painéis acima; por cobrança = agregado; por evento = uma linha por pagamento */}
+      {tab !== 'overview' && (
       <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <div>
-            <h2 className="text-sm font-semibold text-gray-200">Conciliações</h2>
+            <h2 className="text-sm font-semibold text-gray-200">
+              {tab === 'by-charge' ? 'Auditoria por cobrança' : 'Eventos de conciliação'}
+            </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {totalItems.toLocaleString('pt-BR')} resultado{totalItems !== 1 ? 's' : ''} no período
-              {divergentCnt > 0 && <span className="ml-2 text-orange-400">· {divergentCnt} divergente{divergentCnt !== 1 ? 's' : ''}</span>}
+              {tab === 'by-charge'
+                ? (
+                  <>
+                    {totalItems.toLocaleString('pt-BR')} cobrança{totalItems !== 1 ? 's' : ''} com movimento no período
+                    <span className="ml-2 text-gray-600">· Soma dos pagamentos alocados vs valor esperado</span>
+                  </>
+                  )
+                : (
+                  <>
+                    {totalItems.toLocaleString('pt-BR')} resultado{totalItems !== 1 ? 's' : ''} no período
+                    {divergentCnt > 0 && <span className="ml-2 text-orange-400">· {divergentCnt} divergente{divergentCnt !== 1 ? 's' : ''}</span>}
+                  </>
+                  )}
             </p>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800">
-                {['STATUS', 'REFERÊNCIA', 'TIPO', 'ESPERADO', 'RECEBIDO', 'DIFERENÇA', 'DATA', 'AÇÃO'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {reconLoading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">Carregando...</td></tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center">
-                    <GitMerge size={24} className="mx-auto text-gray-700 mb-2" />
-                    <p className="text-sm text-gray-500">Nenhuma conciliação no período selecionado.</p>
-                  </td>
+          {tab === 'by-charge' ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  {['—', 'STATUS', 'REFERÊNCIA', 'ESPERADO', 'RECEBIDO (Σ)', 'DIFERENÇA', 'ÚLTIMO EVENTO', 'AÇÃO'].map((h, i) => (
+                    <th key={`${h}-${i}`} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      {h === '—' ? '' : h}
+                    </th>
+                  ))}
                 </tr>
-              ) : items.map(r => <ReconciliationRow key={r.id} r={r} onAi={() => setAiTarget({ id: r.id, status: r.status })} />)}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {byChargeLoading ? (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">Carregando...</td></tr>
+                ) : (byChargeData?.items ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-12 text-center">
+                      <GitMerge size={24} className="mx-auto text-gray-700 mb-2" />
+                      <p className="text-sm text-gray-500">Nenhuma cobrança com conciliação no período.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  (byChargeData?.items ?? []).map(s => (
+                    <ChargeSummaryRow
+                      key={s.chargeId}
+                      s={s}
+                      expanded={expandedCharge === s.chargeId}
+                      onToggle={() => setExpandedCharge(expandedCharge === s.chargeId ? null : s.chargeId)}
+                      onAi={(id, status) => setAiTarget({ id, status })}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  {['STATUS', 'REFERÊNCIA', 'TIPO', 'ESPERADO', 'RECEBIDO', 'DIFERENÇA', 'DATA', 'AÇÃO'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {reconLoading ? (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">Carregando...</td></tr>
+                ) : items.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-12 text-center">
+                      <GitMerge size={24} className="mx-auto text-gray-700 mb-2" />
+                      <p className="text-sm text-gray-500">Nenhuma conciliação no período selecionado.</p>
+                    </td>
+                  </tr>
+                ) : items.map(r => <ReconciliationRow key={r.id} r={r} onAi={() => setAiTarget({ id: r.id, status: r.status })} />)}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <Pagination page={page} pageSize={pageSize} total={totalItems} onPage={setPage} onPageSize={setPageSize} />
       </div>
+      )}
 
       {aiTarget && (
         <AiExplanationModal
@@ -973,6 +1148,104 @@ export function ReconciliationsPage() {
       )}
       </>}
     </div>
+  )
+}
+
+// ─── Linha agregada por cobrança (auditoria) ───────────────────────────────────
+
+function ChargeSummaryRow({
+  s,
+  expanded,
+  onToggle,
+  onAi,
+}: {
+  s: ChargeReconciliationSummary
+  expanded: boolean
+  onToggle: () => void
+  onAi: (id: string, status: ReconciliationStatus) => void
+}) {
+  const diff = s.netDifference
+  const diffEl = diff === 0
+    ? <span className="text-green-400 font-bold tabular-nums">{formatCurrency(0)}</span>
+    : <span className={`font-bold tabular-nums ${diff > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+        {diff > 0 ? '+' : ''}{formatCurrency(diff)}
+      </span>
+
+  return (
+    <>
+      <tr className="border-b border-gray-800/50 hover:bg-gray-800/25 transition-colors bg-gray-950/20">
+        <td className="px-4 py-3">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="p-1 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+            aria-expanded={expanded}
+            title={expanded ? 'Ocultar pagamentos' : 'Ver pagamentos'}
+          >
+            <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          </button>
+        </td>
+        <td className="px-4 py-3"><AggregateStatusBadge status={s.aggregateStatus} /></td>
+        <td className="px-4 py-3 font-mono text-xs text-gray-300 max-w-[180px] truncate" title={s.chargeReferenceId}>
+          {s.chargeReferenceId}
+        </td>
+        <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">{formatCurrency(s.expectedAmount)}</td>
+        <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums">{formatCurrency(s.totalPaidAllocated)}</td>
+        <td className="px-4 py-3 text-xs">{diffEl}</td>
+        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateShort(s.lastEventAt)}</td>
+        <td className="px-4 py-3">
+          <Link
+            to={`/charges/${s.chargeId}`}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-300 border border-indigo-500/30 rounded-lg hover:bg-indigo-500/10 whitespace-nowrap"
+          >
+            Ver cobrança <ArrowRight size={11} />
+          </Link>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-b border-gray-800/50 bg-gray-950/40">
+          <td colSpan={8} className="px-4 py-3">
+            <p className="text-[11px] font-semibold text-gray-500 mb-2">Pagamentos alocados nesta cobrança</p>
+            <div className="rounded-lg border border-gray-800 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-900 border-b border-gray-800">
+                    <th className="px-3 py-2 text-left text-gray-500">Status</th>
+                    <th className="px-3 py-2 text-left text-gray-500">Ref. / evento</th>
+                    <th className="px-3 py-2 text-right text-gray-500">Valor</th>
+                    <th className="px-3 py-2 text-left text-gray-500">Data</th>
+                    <th className="px-3 py-2 text-left text-gray-500"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.paymentLines.map(line => (
+                    <tr key={line.id} className="border-b border-gray-800/40">
+                      <td className="px-3 py-2"><ReconcStatusBadge status={line.status} /></td>
+                      <td className="px-3 py-2 font-mono text-gray-400 truncate max-w-[200px]" title={line.chargeReferenceId ?? line.paymentEventId}>
+                        {line.chargeReferenceId ?? line.paymentEventId}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-200">{formatCurrency(line.paidAmount)}</td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDateShort(line.createdAt)}</td>
+                      <td className="px-3 py-2">
+                        {isDivergent(line.status) && (
+                          <button
+                            type="button"
+                            onClick={() => onAi(line.id, line.status)}
+                            className="text-[10px] text-indigo-400 hover:text-indigo-300"
+                          >
+                            IA
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -1009,10 +1282,21 @@ function ReconciliationRow({ r, onAi }: { r: RecentReconciliation; onAi: () => v
       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateShort(r.createdAt)}</td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1.5">
-          {r.chargeReferenceId ? (
-            <Link to={`/charges`}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors whitespace-nowrap">
-              Ver detalhes <ArrowRight size={11} />
+          {r.chargeId ? (
+            <Link
+              to={`/charges/${r.chargeId}`}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors whitespace-nowrap"
+              title="Abre a cobrança ligada a esta conciliação"
+            >
+              Ver cobrança <ArrowRight size={11} />
+            </Link>
+          ) : r.chargeReferenceId ? (
+            <Link
+              to="/charges"
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors whitespace-nowrap"
+              title="Sem ID de cobrança na API — localize pela referência na lista"
+            >
+              Lista de cobranças <ArrowRight size={11} />
             </Link>
           ) : null}
           {isDivergent(r.status) && (

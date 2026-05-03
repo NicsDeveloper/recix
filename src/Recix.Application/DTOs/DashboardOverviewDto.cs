@@ -32,6 +32,7 @@ public sealed class FluxSeriesPointDto
 public sealed class RecentReconciliationDto
 {
     public Guid     Id               { get; init; }
+    public Guid?    ChargeId         { get; init; }
     public string   Status           { get; init; } = default!;
     public string   Reason           { get; init; } = default!;
     public decimal? ExpectedAmount   { get; init; }
@@ -69,6 +70,19 @@ public sealed class PendingReviewItemDto
     public decimal? ExpectedAmount { get; init; }
     public decimal  PaidAmount     { get; init; }
     public DateTime CreatedAt      { get; init; }
+
+    /// <summary>Código interno da cobrança (ex.: RECIX-…).</summary>
+    public string? ChargeReferenceId { get; init; }
+
+    /// <summary>Identificador vindo do ERP/extrato ligado à cobrança.</summary>
+    public string? ChargeExternalId { get; init; }
+
+    /// <summary>ID da transação no extrato / PSP (ex.: bnk-tx-…).</summary>
+    public string? PaymentTransactionId { get; init; }
+
+    public string? PaymentReferenceId { get; init; }
+    public string? PaymentProvider     { get; init; }
+    public DateTime? PaymentPaidAt     { get; init; }
 }
 
 public sealed class RecentPaymentEventDto

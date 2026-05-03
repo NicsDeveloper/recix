@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Recix.Application.DTOs;
 using Recix.Application.UseCases;
 using Recix.Application.Interfaces;
+using Recix.Application.Services;
 using Recix.Domain.Enums;
 
 namespace Recix.Api.Endpoints;
@@ -41,6 +42,7 @@ public static class ChargeEndpoints
 
     private static async Task<IResult> ListCharges(
         IChargeRepository repo,
+        DashboardQueryService dashboardQuery,
         [FromQuery] string? status,
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
@@ -50,9 +52,13 @@ public static class ChargeEndpoints
     {
         ChargeStatus? statusEnum = Enum.TryParse<ChargeStatus>(status, true, out var parsed) ? parsed : null;
         var result = await repo.ListAsync(statusEnum, fromDate, toDate, page, pageSize, ct);
+        var labels = await dashboardQuery.GetReconciliationAggregateLabelsForChargesAsync(
+            result.Items.Select(c => c.Id).ToList(), ct);
         var mapped = new PagedResult<ChargeDto>
         {
-            Items = result.Items.Select(ChargeDto.FromEntity).ToList(),
+            Items = result.Items
+                .Select(c => ChargeDto.FromEntity(c, labels.GetValueOrDefault(c.Id)))
+                .ToList(),
             TotalCount = result.TotalCount,
             Page = result.Page,
             PageSize = result.PageSize

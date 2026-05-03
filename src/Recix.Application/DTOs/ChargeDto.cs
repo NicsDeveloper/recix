@@ -14,7 +14,10 @@ public sealed class ChargeDto
     public DateTime? UpdatedAt { get; init; }
     public string? PixCopiaECola { get; init; }
 
-    public static ChargeDto FromEntity(Charge c) => new()
+    /// <summary>Rótulo de auditoria (Conciliado, Parcial, Divergente, EmRevisao, SemAlocacao) ou null se não há conciliações.</summary>
+    public string? ReconciliationAggregate { get; init; }
+
+    public static ChargeDto FromEntity(Charge c, string? reconciliationAggregate = null) => new()
     {
         Id = c.Id,
         ReferenceId = c.ReferenceId,
@@ -24,6 +27,7 @@ public sealed class ChargeDto
         ExpiresAt = c.ExpiresAt,
         CreatedAt = c.CreatedAt,
         UpdatedAt = c.UpdatedAt,
-        PixCopiaECola = c.PixCopiaECola
+        PixCopiaECola = c.PixCopiaECola,
+        ReconciliationAggregate = reconciliationAggregate,
     };
 }

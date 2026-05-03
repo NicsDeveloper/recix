@@ -63,6 +63,19 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
         return new PagedResult<ReconciliationResult> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
 
+    public async Task<IReadOnlyList<ReconciliationResult>> ListByChargeIdsAsync(
+        IReadOnlyList<Guid> chargeIds,
+        CancellationToken ct = default)
+    {
+        if (chargeIds.Count == 0)
+            return [];
+
+        return await OrgQuery()
+            .Where(r => r.ChargeId.HasValue && chargeIds.Contains(r.ChargeId.Value))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<ReconciliationResult>> GetByStatusAndOrganizationAsync(
         ReconciliationStatus status, Guid organizationId, CancellationToken ct = default) =>
         await db.ReconciliationResults
@@ -78,6 +91,43 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
                      && r.ReviewDecision == null)
             .OrderByDescending(r => r.PaidAmount)  // maior impacto financeiro primeiro
             .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<PendingReviewItemDto>> ListPendingReviewDtosAsync(
+        Guid organizationId, CancellationToken ct = default)
+    {
+        var q =
+            from r in db.ReconciliationResults
+            where r.OrganizationId == organizationId
+                  && r.RequiresReview
+                  && r.ReviewDecision == null
+            join c in db.Charges on r.ChargeId equals c.Id into cj
+            from c in cj.DefaultIfEmpty()
+            join p in db.PaymentEvents on r.PaymentEventId equals p.Id into pj
+            from p in pj.DefaultIfEmpty()
+            orderby r.PaidAmount descending
+            select new PendingReviewItemDto
+            {
+                Id                   = r.Id,
+                Status               = r.Status.ToString(),
+                Confidence           = r.Confidence.ToString(),
+                MatchReason          = r.MatchReason.ToString(),
+                MatchedField         = r.MatchedField,
+                Reason               = r.Reason,
+                ChargeId             = r.ChargeId,
+                PaymentEventId       = r.PaymentEventId == Guid.Empty ? null : r.PaymentEventId,
+                ExpectedAmount       = r.ExpectedAmount,
+                PaidAmount           = r.PaidAmount,
+                CreatedAt            = r.CreatedAt,
+                ChargeReferenceId    = c != null ? c.ReferenceId : null,
+                ChargeExternalId     = c != null ? c.ExternalId : null,
+                PaymentTransactionId = p != null ? p.EventId : null,
+                PaymentReferenceId   = p != null ? p.ReferenceId : null,
+                PaymentProvider      = p != null ? p.Provider : null,
+                PaymentPaidAt        = p != null ? p.PaidAt : null,
+            };
+
+        return await q.ToListAsync(ct);
+    }
 
     public Task<int> CountPendingReviewAsync(Guid organizationId, CancellationToken ct = default) =>
         db.ReconciliationResults.CountAsync(

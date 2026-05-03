@@ -92,26 +92,12 @@ public static class ReconciliationEndpoints
         var orgId = GetCurrentOrgId(ctx);
         if (orgId == Guid.Empty) return Results.Unauthorized();
 
-        var items = await repo.GetPendingReviewAsync(orgId, ct);
-        var count = items.Count;
+        var items = await repo.ListPendingReviewDtosAsync(orgId, ct);
 
         var dto = new PendingReviewListDto
         {
-            TotalCount = count,
-            Items = items.Select(r => new PendingReviewItemDto
-            {
-                Id             = r.Id,
-                Status         = r.Status.ToString(),
-                Confidence     = r.Confidence.ToString(),
-                MatchReason    = r.MatchReason.ToString(),
-                MatchedField   = r.MatchedField,
-                Reason         = r.Reason,
-                ChargeId       = r.ChargeId,
-                PaymentEventId = r.PaymentEventId == Guid.Empty ? null : r.PaymentEventId,
-                ExpectedAmount = r.ExpectedAmount,
-                PaidAmount     = r.PaidAmount,
-                CreatedAt      = r.CreatedAt,
-            }).ToList(),
+            TotalCount = items.Count,
+            Items      = items.ToList(),
         };
 
         return Results.Ok(dto);

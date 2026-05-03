@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Sparkles, Copy, Check } from 'lucide-react'
+import { ArrowLeft, Sparkles, Copy, Check, GitMerge } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { chargesService } from '../services/chargesService'
 import { reconciliationsService } from '../services/reconciliationsService'
@@ -199,9 +199,18 @@ export function ChargeDetailPage() {
 
       {/* Reconciliations */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Conciliações relacionadas
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-3">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+            Conciliações relacionadas
+          </h2>
+          <Link
+            to="/reconciliations"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          >
+            <GitMerge size={12} />
+            Abrir visão de auditoria (todas as conciliações)
+          </Link>
+        </div>
         <DataTable
           columns={reconcColumns}
           data={reconciliations?.items ?? []}

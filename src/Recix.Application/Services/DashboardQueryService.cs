@@ -283,6 +283,7 @@ public sealed class DashboardQueryService(
             result.Add(new RecentReconciliationDto
             {
                 Id                = r.Id,
+                ChargeId          = r.ChargeId,
                 Status            = r.Status.ToString(),
                 Reason            = r.Reason,
                 ExpectedAmount    = r.ExpectedAmount,
@@ -408,6 +409,92 @@ public sealed class DashboardQueryService(
             ReconciliationsInvalidRef           = rc.Count(r => r.Status == ReconciliationStatus.InvalidReference),
             ReconciliationsError                = rc.Count(r => r.Status == ReconciliationStatus.ProcessingError),
             Unreconciled     = unreconciled,
+        };
+    }
+
+    /// <summary>Rótulos de auditoria por cobrança (para badges na lista operacional).</summary>
+    public async Task<IReadOnlyDictionary<Guid, string>> GetReconciliationAggregateLabelsForChargesAsync(
+        IReadOnlyList<Guid> chargeIds,
+        CancellationToken ct = default)
+    {
+        if (chargeIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var rows   = await reconciliations.ListByChargeIdsAsync(chargeIds, ct);
+        var groups = rows.GroupBy(r => r.ChargeId!.Value).ToDictionary(g => g.Key, g => (IReadOnlyList<Domain.Entities.ReconciliationResult>)g.ToList());
+        var map    = new Dictionary<Guid, string>();
+
+        foreach (var id in chargeIds)
+        {
+            if (!groups.TryGetValue(id, out var list) || list.Count == 0)
+                continue;
+
+            var charge   = await charges.GetByIdAsync(id, ct);
+            var expected = charge?.Amount ?? list[0].ExpectedAmount ?? 0;
+            map[id] = ReconciliationAggregateClassifier.Classify(expected, list);
+        }
+
+        return map;
+    }
+
+    /// <summary>Uma linha por cobrança no período (eventos de pagamento agregados).</summary>
+    public async Task<PagedResult<ChargeReconciliationSummaryDto>> GetChargeReconciliationSummariesAsync(
+        DateTime? fromDate,
+        DateTime? toDate,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var now      = DateTime.UtcNow;
+        var fromUtc  = (fromDate ?? now.AddDays(-6)).ToUniversalTime().Date;
+        var toUtc    = (toDate ?? now).ToUniversalTime().Date;
+        if (toUtc < fromUtc)
+            (fromUtc, toUtc) = (toUtc, fromUtc);
+        var rangeEnd = toUtc.AddDays(1);
+
+        var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
+        var inRange = reconPage.Items
+            .Where(r => r.CreatedAt >= fromUtc && r.CreatedAt < rangeEnd && r.ChargeId.HasValue)
+            .ToList();
+
+        var groups = inRange
+            .GroupBy(r => r.ChargeId!.Value)
+            .OrderByDescending(g => g.Max(x => x.CreatedAt))
+            .ToList();
+
+        var total = groups.Count;
+        var slice = groups.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var items = new List<ChargeReconciliationSummaryDto>();
+
+        foreach (var g in slice)
+        {
+            var list = g.OrderByDescending(x => x.CreatedAt).ToList();
+            var charge   = await charges.GetByIdAsync(g.Key, ct);
+            var expected = charge?.Amount ?? list[0].ExpectedAmount ?? 0;
+            var allocated = ReconciliationAggregateClassifier.SumAllocatedTowardCharge(list);
+            var status    = ReconciliationAggregateClassifier.Classify(expected, list);
+            var lines     = await EnrichReconciliationsAsync(list, ct);
+            var refId     = charge?.ReferenceId ?? lines.FirstOrDefault()?.ChargeReferenceId ?? "";
+
+            items.Add(new ChargeReconciliationSummaryDto
+            {
+                ChargeId            = g.Key,
+                ChargeReferenceId   = refId,
+                ExpectedAmount      = expected,
+                TotalPaidAllocated  = allocated,
+                NetDifference       = allocated - expected,
+                AggregateStatus     = status,
+                LastEventAt         = list.Max(x => x.CreatedAt),
+                PaymentLines        = lines,
+            });
+        }
+
+        return new PagedResult<ChargeReconciliationSummaryDto>
+        {
+            Items      = items,
+            TotalCount = total,
+            Page       = page,
+            PageSize   = pageSize,
         };
     }
 

@@ -24,6 +24,11 @@ public static class DashboardEndpoints
             .WithName("GetClosingReport")
             .WithSummary("Relatório de fechamento do período: esperado vs recebido vs divergente")
             .Produces<ClosingReportDto>();
+
+        group.MapGet("/charge-reconciliation-summaries", GetChargeReconciliationSummaries)
+            .WithName("GetChargeReconciliationSummaries")
+            .WithSummary("Auditoria por cobrança: soma de pagamentos, diferença e linhas de evento no período")
+            .Produces<PagedResult<ChargeReconciliationSummaryDto>>();
     }
 
     private static async Task<IResult> GetSummary(
@@ -55,5 +60,17 @@ public static class DashboardEndpoints
         var to   = toDate   ?? now;
         var report = await queryService.GetClosingReportAsync(from, to, ct);
         return Results.Ok(report);
+    }
+
+    private static async Task<IResult> GetChargeReconciliationSummaries(
+        DashboardQueryService queryService,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var result = await queryService.GetChargeReconciliationSummariesAsync(fromDate, toDate, page, pageSize, ct);
+        return Results.Ok(result);
     }
 }

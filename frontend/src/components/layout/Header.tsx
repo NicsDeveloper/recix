@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 
 interface HeaderProps {
   title: string
-  subtitle?: string
+  /** Texto ou conteúdo rico (ex.: links) abaixo do título. */
+  subtitle?: ReactNode
   action?: ReactNode
 }
 

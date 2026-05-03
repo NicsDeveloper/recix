@@ -4,7 +4,13 @@ import type { Charge, ChargeListParams, CreateChargeRequest, PagedResult } from 
 export const chargesService = {
   async list(params: ChargeListParams = {}): Promise<PagedResult<Charge>> {
     const { data } = await http.get<PagedResult<Charge>>('/charges', {
-      params: { pageSize: 100, ...params },
+      params: {
+        page: params.page ?? 1,
+        pageSize: params.pageSize ?? 20,
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.fromDate ? { fromDate: params.fromDate } : {}),
+        ...(params.toDate ? { toDate: params.toDate } : {}),
+      },
     })
     return data
   },

@@ -448,7 +448,19 @@ export function DashboardPage() {
                       <td className="px-4 py-3 text-xs text-gray-200 font-semibold tabular-nums">{formatCurrency(r.paidAmount)}</td>
                       <td className={`px-4 py-3 text-xs tabular-nums ${diffCls}`}>{diffText}</td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtShort(r.createdAt)}</td>
-                      <td className="pr-3"><ChevronRight size={13} className="text-gray-700" /></td>
+                      <td className="pr-3 text-right">
+                        {r.chargeId ? (
+                          <Link
+                            to={`/charges/${r.chargeId}`}
+                            className="inline-flex items-center gap-0.5 text-[11px] font-medium text-indigo-400 hover:text-indigo-300"
+                            title="Ver cobrança"
+                          >
+                            Cobrança <ChevronRight size={13} className="text-indigo-500/80" />
+                          </Link>
+                        ) : (
+                          <ChevronRight size={13} className="text-gray-700 inline-block" />
+                        )}
+                      </td>
                     </tr>
                   )
                 })}

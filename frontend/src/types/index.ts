@@ -47,6 +47,20 @@ export interface Charge {
   createdAt: string
   updatedAt: string | null
   pixCopiaECola: string | null
+  /** Auditoria agregada (API): Conciliado | Parcial | Divergente | EmRevisao | SemAlocacao */
+  reconciliationAggregate?: string | null
+}
+
+/** Uma linha por cobrança na visão de auditoria. */
+export interface ChargeReconciliationSummary {
+  chargeId: string
+  chargeReferenceId: string
+  expectedAmount: number
+  totalPaidAllocated: number
+  netDifference: number
+  aggregateStatus: string
+  lastEventAt: string
+  paymentLines: RecentReconciliation[]
 }
 
 export interface PaymentEvent {
@@ -112,6 +126,8 @@ export interface FluxPoint {
 
 export interface RecentReconciliation {
   id: string
+  /** Presente quando a conciliação está ligada a uma cobrança (link operacional). */
+  chargeId?: string | null
   status: ReconciliationStatus
   reason: string
   expectedAmount: number | null
@@ -138,6 +154,15 @@ export interface PendingReviewItem {
   expectedAmount: number | null
   paidAmount: number
   createdAt: string
+  /** Código RECIX-… da cobrança sugerida */
+  chargeReferenceId?: string | null
+  /** ID vindo do ERP / coluna referencia do CSV de vendas */
+  chargeExternalId?: string | null
+  /** ID da linha no extrato (eventId) */
+  paymentTransactionId?: string | null
+  paymentReferenceId?: string | null
+  paymentProvider?: string | null
+  paymentPaidAt?: string | null
 }
 
 export interface PendingReviewList {

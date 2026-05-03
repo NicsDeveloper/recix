@@ -38,9 +38,21 @@ type NavItem =
 
 const navItems: NavItem[] = [
   { kind: 'link', label: 'Dashboard', icon: LayoutDashboard, to: '/', end: true },
-  { kind: 'link', label: 'Cobranças', icon: CreditCard, to: '/charges' },
+  {
+    kind: 'link',
+    label: 'Cobranças',
+    icon: CreditCard,
+    to: '/charges',
+    title: 'Operacional: quem deve, quanto, vencimento e status da cobrança (antes do dinheiro “bater” no banco).',
+  },
   { kind: 'link', label: 'Eventos de Pagamento', icon: Zap, to: '/payment-events', adminOnly: true },
-  { kind: 'link', label: 'Conciliações', icon: GitMerge, to: '/reconciliations' },
+  {
+    kind: 'link',
+    label: 'Conciliações',
+    icon: GitMerge,
+    to: '/reconciliations',
+    title: 'Auditoria: extrato vs esperado, divergências e a verdade financeira após o recebimento.',
+  },
   {
     kind: 'link',
     label: 'Simulador PIX',

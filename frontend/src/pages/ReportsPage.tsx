@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Download, FileSpreadsheet, FileJson, FileText, CalendarDays, Database, ArrowDownToLine, CheckCircle, AlertTriangle, Eye, BarChart2 } from 'lucide-react'
+import {
+  Download, FileSpreadsheet, FileJson, FileText, CalendarDays, Database, ArrowDownToLine,
+  CheckCircle, AlertTriangle, Eye, Landmark, FileOutput,
+} from 'lucide-react'
 import { Header } from '../components/layout/Header'
 import { FilterBar } from '../components/ui/FilterBar'
 import { chargesService } from '../services/chargesService'
@@ -187,6 +190,15 @@ function reportLabel(type: ReportType) {
       : 'Conciliações'
 }
 
+/** Mesmo intervalo dos filtros — export inclui só linhas que entram no ficheiro. */
+function formatPeriodBr(fromDate: string, toDate: string) {
+  const a = parseDate(fromDate)
+  const b = parseDate(toDate)
+  return `${a.toLocaleDateString('pt-BR')} a ${b.toLocaleDateString('pt-BR')}`
+}
+
+const EXPORT_PAGE_SIZE = 50_000
+
 // ─── Closing Report ──────────────────────────────────────────────────────────
 
 const RECON_ROWS: Array<{
@@ -217,7 +229,7 @@ function ClosingReportSection({ fromDate, toDate }: { fromDate: string; toDate: 
   if (isLoading) {
     return (
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 flex items-center justify-center h-48">
-        <p className="text-sm text-gray-500 animate-pulse">Carregando relatório...</p>
+        <p className="text-sm text-gray-500 animate-pulse">A carregar resumo do sistema…</p>
       </div>
     )
   }
@@ -225,7 +237,7 @@ function ClosingReportSection({ fromDate, toDate }: { fromDate: string; toDate: 
   if (isError || !data) {
     return (
       <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-        <p className="text-sm text-red-400">Erro ao carregar o relatório de fechamento.</p>
+        <p className="text-sm text-red-400">Não foi possível carregar o resumo do período.</p>
       </div>
     )
   }
@@ -235,94 +247,139 @@ function ClosingReportSection({ fromDate, toDate }: { fromDate: string; toDate: 
     .filter(row => row.attention)
     .reduce((sum, row) => sum + (Number(r[row.key]) || 0), 0)
   const closeable = attentionCount === 0
+  const diffEsperadoMenosRecebido = r.expectedAmount - r.receivedAmount
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-        <div className="flex items-center gap-2.5">
-          <BarChart2 size={15} className="text-indigo-400" />
-          <h2 className="text-sm font-semibold text-gray-200">Relatório de Fechamento</h2>
+      {/* Cabeçalho — não é o ficheiro exportado */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-5 py-4 border-b border-gray-800 bg-gray-950/40">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <Landmark size={16} className="text-indigo-400 flex-shrink-0" />
+            <h2 className="text-base font-semibold text-gray-100">Resumo no sistema (período)</h2>
+          </div>
+          <p className="text-xs text-gray-500 mt-1.5 max-w-2xl leading-relaxed">
+            <span className="text-gray-400 font-medium">Período:</span> {formatPeriodBr(fromDate, toDate)}
+            {' · '}
+            <span className="text-gray-400 font-medium">Base:</span> todos os dados da organização neste intervalo (não depende do export).
+          </p>
         </div>
-        <div className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+        <div className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border flex-shrink-0 ${
           closeable
             ? 'text-green-400 border-green-500/20 bg-green-500/10'
             : 'text-amber-400 border-amber-500/20 bg-amber-500/10'
         }`}>
           {closeable
             ? <><CheckCircle size={12} /> Período fechável</>
-            : <><Eye size={12} /> {attentionCount} ocorrência{attentionCount !== 1 ? 's' : ''} pendente{attentionCount !== 1 ? 's' : ''}</>
+            : <><Eye size={12} /> {attentionCount} alerta{attentionCount !== 1 ? 's' : ''} em conciliações</>
           }
         </div>
       </div>
 
-      <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* KPIs financeiros */}
-        <div className="space-y-3">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Financeiro</p>
-          {[
-            { label: 'Valor esperado',   value: formatCurrency(r.expectedAmount),  color: 'text-gray-200' },
-            { label: 'Valor recebido',   value: formatCurrency(r.receivedAmount),  color: 'text-green-400' },
-            { label: 'Valor divergente', value: formatCurrency(r.divergentAmount), color: r.divergentAmount > 0 ? 'text-red-400' : 'text-gray-400' },
-            { label: 'Valor pendente',   value: formatCurrency(r.pendingAmount),   color: r.pendingAmount > 0 ? 'text-yellow-400' : 'text-gray-400' },
-            { label: 'Taxa de recuperação', value: `${Number(r.recoveryRate).toFixed(1)}%`, color: Number(r.recoveryRate) >= 95 ? 'text-green-400' : 'text-orange-400' },
-          ].map(item => (
-            <div key={item.label} className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">{item.label}</span>
-              <span className={`text-sm font-semibold tabular-nums ${item.color}`}>{item.value}</span>
-            </div>
-          ))}
-          <div className="pt-2 border-t border-gray-800 space-y-1">
+      <div className="p-5 space-y-6">
+        {/* ── BLOCO B — Financeiro do período ───────────────────────────────── */}
+        <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/[0.04] p-4">
+          <p className="text-[11px] font-bold text-indigo-300 uppercase tracking-wider mb-1">Resumo financeiro do período</p>
+          <p className="text-[11px] text-gray-500 mb-4">Valores agregados das cobranças no intervalo (contabilidade operacional / fecho).</p>
+          <div className="space-y-3">
             {[
-              { label: 'Cobranças totais',    value: r.totalCharges },
-              { label: 'Pagas',               value: r.paidCharges,     color: 'text-green-400' },
-              { label: 'Pendentes',           value: r.pendingCharges,  color: r.pendingCharges  > 0 ? 'text-yellow-400' : undefined },
-              { label: 'Divergentes',         value: r.divergentCharges,color: r.divergentCharges > 0 ? 'text-red-400' : undefined },
-              { label: 'Expiradas',           value: r.expiredCharges,  color: r.expiredCharges  > 0 ? 'text-gray-400' : undefined },
+              { label: 'Valor esperado', sub: 'Soma dos montantes das cobranças no período', value: formatCurrency(r.expectedAmount), color: 'text-gray-100' },
+              { label: 'Valor recebido', sub: 'Soma das cobranças com status pago (no sistema)', value: formatCurrency(r.receivedAmount), color: 'text-green-400' },
+              {
+                label: 'Diferença (esperado − recebido)',
+                sub: 'Quanto falta para o recebido igualar ao esperado',
+                value: formatCurrency(diffEsperadoMenosRecebido),
+                color: diffEsperadoMenosRecebido > 0 ? 'text-amber-400' : diffEsperadoMenosRecebido < 0 ? 'text-sky-400' : 'text-gray-400',
+              },
+              {
+                label: 'Diferença financeira (cobranças problemáticas)',
+                sub: 'Montante em cobranças divergentes ou excedentes',
+                value: formatCurrency(r.divergentAmount),
+                color: r.divergentAmount > 0 ? 'text-red-400' : 'text-gray-500',
+              },
+              {
+                label: 'Valor não recebido',
+                sub: 'Cobranças ainda pendentes ou parciais (soma dos montantes)',
+                value: formatCurrency(r.pendingAmount),
+                color: r.pendingAmount > 0 ? 'text-amber-300' : 'text-gray-500',
+              },
+              {
+                label: 'Taxa de conciliação',
+                sub: 'Recebido ÷ esperado (0–100%)',
+                value: `${Number(r.recoveryRate).toFixed(1).replace('.', ',')}%`,
+                color: Number(r.recoveryRate) >= 95 ? 'text-green-400' : 'text-orange-400',
+              },
             ].map(item => (
-              <div key={item.label} className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">{item.label}</span>
-                <span className={`text-xs font-semibold tabular-nums ${item.color ?? 'text-gray-300'}`}>{item.value}</span>
+              <div key={item.label} className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-1 border-b border-gray-800/60 pb-3 last:border-0 last:pb-0">
+                <div>
+                  <span className="text-xs text-gray-400 block">{item.label}</span>
+                  <span className="text-[10px] text-gray-600 mt-0.5 block">{item.sub}</span>
+                </div>
+                <span className={`text-sm font-bold tabular-nums sm:text-right ${item.color}`}>{item.value}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Breakdown de conciliações */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Conciliações ({r.reconciliationsTotal} total)</p>
-          {RECON_ROWS.map(row => {
-            const count = Number(r[row.key]) || 0
-            const pct = r.reconciliationsTotal > 0 ? (count / r.reconciliationsTotal) * 100 : 0
-            return (
-              <div key={row.key}>
-                <div className="flex items-center justify-between mb-0.5">
-                  <div className="flex items-center gap-1.5">
-                    {row.attention && count > 0 && <AlertTriangle size={10} className="text-amber-400 flex-shrink-0" />}
-                    <span className="text-xs text-gray-400">{row.label}</span>
-                  </div>
-                  <span className={`text-xs font-semibold tabular-nums ${count > 0 ? row.color : 'text-gray-600'}`}>{count}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* ── BLOCO C — Operacional ───────────────────────────────────────── */}
+          <div className="rounded-lg border border-gray-700/80 bg-gray-950/30 p-4">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Resumo operacional</p>
+            <p className="text-[11px] text-gray-600 mb-3">Contagens de cobranças no período (estado no sistema, não linhas do CSV).</p>
+            <div className="space-y-2">
+              {[
+                { label: 'Cobranças no período', value: r.totalCharges },
+                { label: 'Pagas',               value: r.paidCharges,     color: 'text-green-400' },
+                { label: 'Pendentes / parciais', value: r.pendingCharges,  color: r.pendingCharges  > 0 ? 'text-amber-400' : 'text-gray-500' },
+                { label: 'Marcadas divergentes', value: r.divergentCharges,color: r.divergentCharges > 0 ? 'text-red-400' : 'text-gray-500' },
+                { label: 'Expiradas',           value: r.expiredCharges,  color: r.expiredCharges  > 0 ? 'text-gray-400' : 'text-gray-500' },
+              ].map(item => (
+                <div key={item.label} className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">{item.label}</span>
+                  <span className={`text-sm font-semibold tabular-nums ${item.color ?? 'text-gray-200'}`}>{item.value}</span>
                 </div>
-                {r.reconciliationsTotal > 0 && (
-                  <div className="h-1 rounded-full bg-gray-800 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${count === 0 ? 'bg-gray-700' : row.attention ? 'bg-red-500/50' : 'bg-green-500/50'}`}
-                      style={{ width: `${pct}%` }}
-                    />
+              ))}
+            </div>
+          </div>
+
+          {/* Breakdown de conciliações */}
+          <div className="rounded-lg border border-gray-700/80 bg-gray-950/30 p-4 space-y-2">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Impacto em conciliações</p>
+            <p className="text-[11px] text-gray-600 mb-3">Volume de resultados de conciliação no período ({r.reconciliationsTotal} totais).</p>
+            {RECON_ROWS.map(row => {
+              const count = Number(r[row.key]) || 0
+              const pct = r.reconciliationsTotal > 0 ? (count / r.reconciliationsTotal) * 100 : 0
+              return (
+                <div key={row.key}>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {row.attention && count > 0 && <AlertTriangle size={10} className="text-amber-400 flex-shrink-0" />}
+                      <span className="text-xs text-gray-400 truncate">{row.label}</span>
+                    </div>
+                    <span className={`text-xs font-semibold tabular-nums flex-shrink-0 ${count > 0 ? row.color : 'text-gray-600'}`}>{count}</span>
                   </div>
-                )}
-              </div>
-            )
-          })}
+                  {r.reconciliationsTotal > 0 && (
+                    <div className="h-1 rounded-full bg-gray-800 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${count === 0 ? 'bg-gray-700' : row.attention ? 'bg-red-500/50' : 'bg-green-500/50'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
 
       {/* Cobranças não conciliadas */}
       {r.unreconciled.length > 0 && (
         <div className="border-t border-gray-800 px-5 py-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
             Cobranças sem conciliação ({r.unreconciled.length})
           </p>
+          <p className="text-[10px] text-gray-600 mb-3">Lista do sistema (amostra) — não faz parte do ficheiro exportado.</p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -351,7 +408,9 @@ function ClosingReportSection({ fromDate, toDate }: { fromDate: string; toDate: 
       )}
 
       <div className="border-t border-gray-800 px-5 py-2.5">
-        <p className="text-[10px] text-gray-600">Gerado em {new Date(r.generatedAt).toLocaleString('pt-BR')}</p>
+        <p className="text-[10px] text-gray-600">
+          Dados do sistema atualizados em {new Date(r.generatedAt).toLocaleString('pt-BR')} (cache curto).
+        </p>
       </div>
     </div>
   )
@@ -366,13 +425,19 @@ export function ReportsPage() {
   const [lastGeneratedAt, setLastGeneratedAt] = useState<string | null>(null)
   const [lastCount, setLastCount] = useState(0)
   const [lastAmountTotal, setLastAmountTotal] = useState(0)
+  const [lastReportType, setLastReportType] = useState<ReportType | null>(null)
 
   const invalidRange = useMemo(() => parseDate(toDate) < parseDate(fromDate), [fromDate, toDate])
 
   const { mutate: generateReport, isPending, error } = useMutation({
     mutationFn: async (_: { format: ReportFormat }) => {
       if (reportType === 'charges') {
-        const result = await chargesService.list()
+        const result = await chargesService.list({
+          fromDate,
+          toDate,
+          page: 1,
+          pageSize: EXPORT_PAGE_SIZE,
+        })
         return result.items
           .filter((c) => isInRange(c.createdAt, fromDate, toDate))
           .map((c) => ({
@@ -388,7 +453,7 @@ export function ReportsPage() {
       }
 
       if (reportType === 'payment-events') {
-        const result = await paymentEventsService.list()
+        const result = await paymentEventsService.list({ page: 1, pageSize: EXPORT_PAGE_SIZE })
         return result.items
           .filter((e) => isInRange(e.createdAt, fromDate, toDate))
           .map((e) => ({
@@ -405,7 +470,7 @@ export function ReportsPage() {
           }))
       }
 
-      const result = await reconciliationsService.list()
+      const result = await reconciliationsService.list({ page: 1, pageSize: EXPORT_PAGE_SIZE })
       return result.items
         .filter((r) => isInRange(r.createdAt, fromDate, toDate))
         .map((r) => ({
@@ -438,18 +503,29 @@ export function ReportsPage() {
       }, 0)
       setLastCount(rows.length)
       setLastAmountTotal(total)
+      setLastReportType(reportType)
       setLastGeneratedAt(new Date().toISOString())
     },
   })
 
   return (
-    <div>
+    <div className="space-y-8">
       <Header
         title="Relatórios"
-        subtitle="Gere exportações operacionais de cobranças, eventos e conciliações"
+        subtitle="Separamos o que vai no ficheiro exportado do que o sistema sabe sobre o período — para os números não parecerem contraditórios."
       />
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+      <ClosingReportSection fromDate={fromDate} toDate={toDate} />
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <FileOutput size={16} className="text-gray-500" />
+          <h2 className="text-sm font-semibold text-gray-200">Gerar ficheiro (export)</h2>
+        </div>
+        <p className="text-xs text-gray-500 mb-4 max-w-3xl leading-relaxed">
+          O ficheiro contém apenas as linhas do tipo escolhido que caem no período abaixo.
+          Os totais do <span className="text-gray-400">Bloco A</span> referem-se a esse subconjunto — não ao resumo financeiro do sistema acima.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <div className="rounded-lg border border-gray-800 bg-gray-800/40 p-3">
             <p className="text-xs text-gray-500 flex items-center gap-1.5">
@@ -537,6 +613,7 @@ export function ReportsPage() {
         </div>
       )}
 
+      <p className="text-[11px] text-gray-600 -mt-4 mb-1">Atalhos de formato (usam os mesmos filtros).</p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           onClick={() => generateReport({ format: 'csv' })}
@@ -595,21 +672,44 @@ export function ReportsPage() {
       </div>
 
       {lastGeneratedAt && (
-        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
-          <p className="text-xs text-gray-500">
-            Último relatório gerado em {formatDateTime(lastGeneratedAt)}.
-          </p>
-          <p className="text-xs text-gray-300 mt-1">
-            Registros: <span className="font-semibold">{lastCount.toLocaleString('pt-BR')}</span>
-            {' '}• Total financeiro estimado:{' '}
-            <span className="font-semibold">{formatCurrency(lastAmountTotal)}</span>
-          </p>
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] overflow-hidden">
+          <div className="px-4 py-3 border-b border-emerald-500/20 flex items-center gap-2">
+            <FileText size={15} className="text-emerald-400 flex-shrink-0" />
+            <div>
+              <p className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">Relatório gerado (ficheiro)</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">Apenas o que foi incluído no último download.</p>
+            </div>
+          </div>
+          <div className="px-4 py-4 space-y-3 text-sm text-gray-300">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-gray-500 block">Período aplicado no ficheiro</span>
+                <span className="font-medium text-gray-200">{formatPeriodBr(fromDate, toDate)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Tipo exportado</span>
+                <span className="font-medium text-gray-200">{reportLabel(lastReportType ?? reportType)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Registos no ficheiro</span>
+                <span className="font-semibold tabular-nums text-gray-100">{lastCount.toLocaleString('pt-BR')}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Valor total do relatório</span>
+                <span className="font-semibold tabular-nums text-gray-100">{formatCurrency(lastAmountTotal)}</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500 leading-relaxed border-t border-gray-800/80 pt-3">
+              <span className="text-gray-400 font-medium">Contexto:</span> soma dos campos de valor das linhas exportadas
+              ({(lastReportType ?? reportType) === 'charges' ? 'amount'
+                : (lastReportType ?? reportType) === 'payment-events' ? 'paidAmount'
+                  : 'paidAmount (conciliações)'}
+              ). O total de linhas refere-se só a este tipo e período; o resumo operacional (Bloco C) conta todas as cobranças no período.
+            </p>
+            <p className="text-[10px] text-gray-600">Gerado em {formatDateTime(lastGeneratedAt)}.</p>
+          </div>
         </div>
       )}
-
-      <div className="mt-6">
-        <ClosingReportSection fromDate={fromDate} toDate={toDate} />
-      </div>
     </div>
   )
 }

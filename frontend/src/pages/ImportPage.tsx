@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import {
@@ -147,6 +147,12 @@ function PreviewTable({ preview }: { preview: ImportPreviewResult }) {
               <th className="px-3 py-2 text-left text-gray-500 w-8"></th>
               {isSales ? (
                 <>
+                  <th className="px-3 py-2 text-left text-gray-500 max-w-[140px]" title="Gerada ao confirmar; pode mudar se criar cobranças antes.">
+                    Ref. cobrança (prévia)
+                  </th>
+                  <th className="px-3 py-2 text-left text-gray-500 max-w-[100px]" title="Coluna opcional no CSV — use no extrato em referenceId.">
+                    ID no arquivo
+                  </th>
                   <th className="px-3 py-2 text-left text-gray-500">Descrição</th>
                   <th className="px-3 py-2 text-left text-gray-500">Valor</th>
                   <th className="px-3 py-2 text-left text-gray-500">Data</th>
@@ -168,6 +174,12 @@ function PreviewTable({ preview }: { preview: ImportPreviewResult }) {
                 <td className="px-3 py-2">{statusIcon(l)}</td>
                 {isSales ? (
                   <>
+                    <td className="px-3 py-2 font-mono text-[11px] text-indigo-300/90 max-w-[140px] truncate" title={l.reference ?? ''}>
+                      {l.reference ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-gray-400 max-w-[100px] truncate" title={l.eventId ?? ''}>
+                      {l.eventId ?? '—'}
+                    </td>
                     <td className="px-3 py-2 text-gray-300 max-w-[180px] truncate">{l.description ?? '—'}</td>
                     <td className="px-3 py-2 text-gray-300 tabular-nums whitespace-nowrap">
                       {l.amount != null ? `R$ ${l.amount.toFixed(2)}` : '—'}
@@ -392,7 +404,16 @@ function ImportPanel({
 
   const importMut = useMutation<ImportSalesResult | ImportStatementResult, Error, File>({
     mutationFn: type === 'sales' ? importService.uploadSales : importService.uploadStatement,
-    onSuccess: () => setStep('result'),
+    onSuccess: (data) => {
+      setStep('result')
+      if (type === 'statement') {
+        const imported = 'imported' in data ? data.imported : 0
+        if (imported > 0) {
+          sessionStorage.setItem('recix_import_stmt_followup', '1')
+          window.dispatchEvent(new Event('recix-import-stmt'))
+        }
+      }
+    },
   })
 
   function handleFileSelect(f: File) {
@@ -403,9 +424,12 @@ function ImportPanel({
     setStep('upload')
   }
 
-  function handlePreview() {
-    if (file) previewMut.mutate(file)
-  }
+  // Ao escolher o ficheiro, valida e mostra o preview automaticamente (menos cliques).
+  useEffect(() => {
+    if (!file) return
+    previewMut.mutate(file)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage à troca de ficheiro
+  }, [file])
 
   function handleConfirm() {
     if (file) importMut.mutate(file)
@@ -444,21 +468,24 @@ function ImportPanel({
 
       {/* Erros da API */}
       {(previewMut.error || importMut.error) && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 flex gap-2 text-sm text-red-400">
-          <XCircle size={15} className="flex-shrink-0 mt-0.5" />
-          {(previewMut.error ?? importMut.error)?.message}
+        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 flex flex-col gap-2 text-sm text-red-400">
+          <div className="flex gap-2">
+            <XCircle size={15} className="flex-shrink-0 mt-0.5" />
+            <span>{(previewMut.error ?? importMut.error)?.message}</span>
+          </div>
+          {previewMut.error && file && step === 'upload' && (
+            <button type="button" onClick={() => previewMut.mutate(file)}
+              className="self-start text-xs font-medium text-indigo-400 hover:text-indigo-300 underline">
+              Tentar novamente
+            </button>
+          )}
         </div>
       )}
 
-      {/* Botão de preview */}
-      {step === 'upload' && file && !previewMut.isPending && (
+      {step === 'upload' && file && (
         <div className="flex items-center gap-3">
-          <button onClick={handlePreview}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
-            <Eye size={15} /> Validar e pré-visualizar
-          </button>
-          <button onClick={handleReset} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
-            Limpar
+          <button type="button" onClick={handleReset} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+            Limpar arquivo
           </button>
         </div>
       )}
@@ -466,7 +493,7 @@ function ImportPanel({
       {/* Loading preview */}
       {previewMut.isPending && (
         <div className="flex items-center gap-2 text-sm text-indigo-400">
-          <Loader2 size={15} className="animate-spin" /> Validando arquivo...
+          <Loader2 size={15} className="animate-spin" /> A validar e a gerar pré-visualização...
         </div>
       )}
 
@@ -474,6 +501,12 @@ function ImportPanel({
       {step === 'preview' && preview && (
         <>
           <PreviewSummary preview={preview} />
+          {preview.type === 'Sales' && preview.validLines > 0 && (
+            <p className="text-[11px] text-gray-500 leading-snug">
+              A coluna <span className="text-gray-400">Ref. cobrança (prévia)</span> segue a mesma regra da importação real;
+              se criar outras cobranças antes de confirmar, os números finais podem deslocar-se.
+            </p>
+          )}
           <PreviewTable preview={preview} />
 
           {preview.hasBlockingErrors && (
@@ -533,6 +566,7 @@ type Tab = 'sales' | 'statement'
 export function ImportPage() {
   const [tab, setTab]     = useState<Tab>('sales')
   const [salesDone, setSalesDone] = useState(false)
+  const [statementDone, setStatementDone] = useState(false)
 
   return (
     <div>
@@ -563,17 +597,25 @@ export function ImportPage() {
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-500 mt-3 flex items-center gap-1.5">
-          <Info size={11} />
-          Importe vendas e extrato em qualquer ordem. O Recix re-concilia automaticamente.
+        <p className="text-xs text-gray-500 mt-3 leading-relaxed">
+          <span className="flex items-start gap-1.5">
+            <Info size={11} className="flex-shrink-0 mt-0.5" />
+            <span>
+              São <strong className="text-gray-400 font-medium">dois envios</strong> na mesma página: primeiro o CSV de{' '}
+              <strong className="text-gray-400 font-medium">vendas</strong> (cada linha vira uma cobrança esperada), depois o{' '}
+              <strong className="text-gray-400 font-medium">extrato</strong> (pagamentos que o banco registou). Exporte do seu ERP ou banco e{' '}
+              <strong className="text-gray-400 font-medium">importe</strong> aqui — o botão verde grava no Recix; não gera ficheiro para download.
+              Você pode alternar a ordem; o motor re-concilia.
+            </span>
+          </span>
         </p>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl mb-6 w-fit">
         {([
-          { id: 'sales',     label: 'Vendas',          icon: <ShoppingCart size={13} />, done: salesDone },
-          { id: 'statement', label: 'Extrato bancário', icon: <Building2   size={13} />, done: false },
+          { id: 'sales',     label: 'Vendas',           icon: <ShoppingCart size={13} />, done: salesDone },
+          { id: 'statement', label: 'Extrato bancário', icon: <Building2   size={13} />, done: statementDone },
         ] as const).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={[
@@ -601,6 +643,7 @@ export function ImportPage() {
                 { name: 'valor',     required: true,  example: '350.00' },
                 { name: 'descricao', required: true,  example: 'Amortecedor' },
                 { name: 'data',      required: false, example: '2026-05-01 09:30' },
+                { name: 'referencia', required: false, example: 'tx-externo-001' },
               ]}
             />
           }
@@ -637,11 +680,12 @@ export function ImportPage() {
             </div>
           }
           extraContent={<BankTips />}
+          onDone={() => setStatementDone(true)}
         />
       )}
 
       {/* Link para conciliações */}
-      {salesDone && (
+      {(salesDone || statementDone) && (
         <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 p-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <GitMerge size={16} className="text-green-400" />

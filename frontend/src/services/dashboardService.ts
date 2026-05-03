@@ -1,5 +1,5 @@
 import { http } from '../lib/http'
-import type { ClosingReport, DashboardOverview, DashboardSummary } from '../types'
+import type { ChargeReconciliationSummary, ClosingReport, DashboardOverview, DashboardSummary, PagedResult } from '../types'
 
 export const dashboardService = {
   async getSummary(): Promise<DashboardSummary> {
@@ -19,6 +19,29 @@ export const dashboardService = {
         : undefined
 
     const { data } = await http.get<DashboardOverview>('/dashboard/overview', { params: normalizedParams })
+    return data
+  },
+
+  async getChargeReconciliationSummaries(params?: {
+    fromDate?: string
+    toDate?: string
+    page?: number
+    pageSize?: number
+  }): Promise<PagedResult<ChargeReconciliationSummary>> {
+    const normalizedParams =
+      params && (params.fromDate || params.toDate)
+        ? {
+            fromDate: params.fromDate ? normalizeDateParam(params.fromDate, 'start') : undefined,
+            toDate: params.toDate ? normalizeDateParam(params.toDate, 'end') : undefined,
+            page: params.page,
+            pageSize: params.pageSize,
+          }
+        : { page: params?.page, pageSize: params?.pageSize }
+
+    const { data } = await http.get<PagedResult<ChargeReconciliationSummary>>(
+      '/dashboard/charge-reconciliation-summaries',
+      { params: normalizedParams },
+    )
     return data
   },
 

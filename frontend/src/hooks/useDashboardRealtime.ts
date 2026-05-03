@@ -69,6 +69,7 @@ function handleEvent(
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
       queryClient.invalidateQueries({ queryKey: ['reconciliations-enriched'] })
       queryClient.invalidateQueries({ queryKey: ['closing-report'] })
+      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
       if (evt.entityId) {
         queryClient.invalidateQueries({ queryKey: ['charge', evt.entityId] })
         queryClient.invalidateQueries({ queryKey: ['reconciliations-by-charge', evt.entityId] })
@@ -89,6 +90,7 @@ function handleEvent(
       queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
       queryClient.invalidateQueries({ queryKey: ['closing-report'] })
+      queryClient.invalidateQueries({ queryKey: ['pending-review'] })
       break
 
     case 'payment_event.updated':
