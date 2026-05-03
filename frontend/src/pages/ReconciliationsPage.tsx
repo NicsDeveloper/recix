@@ -778,9 +778,9 @@ export function ReconciliationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as Tab | 'review' | null
   const initialTab: Tab | 'review' =
-    tabParam === 'review' ? 'review'
-      : tabParam === 'by-charge' || tabParam === 'by-event' ? tabParam
-        : 'overview'
+    tabParam === 'by-charge' || tabParam === 'by-event' ? tabParam
+      : tabParam === 'overview' ? 'overview'
+        : 'review'
   const [tab, setTab] = useState<Tab | 'review'>(initialTab)
   const [fromDate, setFromDate]     = useState(() => shiftLocalDaysFromToday(-6))
   const [toDate, setToDate]         = useState(getLocalTodayYmd)
@@ -1095,8 +1095,13 @@ export function ReconciliationsPage() {
                 ) : (byChargeData?.items ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center">
-                      <GitMerge size={24} className="mx-auto text-gray-700 mb-2" />
-                      <p className="text-sm text-gray-500">Nenhuma cobrança com conciliação no período.</p>
+                      <GitMerge size={24} className="mx-auto text-gray-700 mb-3" />
+                      <p className="text-sm font-semibold text-gray-400 mb-1">Nenhuma cobrança com conciliação</p>
+                      <p className="text-xs text-gray-600">
+                        Nenhum pagamento foi processado neste período.{' '}
+                        <Link to="/import" className="text-indigo-400 hover:text-indigo-300">Importe um extrato bancário</Link>{' '}
+                        ou envie um webhook para iniciar.
+                      </p>
                     </td>
                   </tr>
                 ) : (
@@ -1129,8 +1134,15 @@ export function ReconciliationsPage() {
                 ) : items.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center">
-                      <GitMerge size={24} className="mx-auto text-gray-700 mb-2" />
-                      <p className="text-sm text-gray-500">Nenhuma conciliação no período selecionado.</p>
+                      <GitMerge size={24} className="mx-auto text-gray-700 mb-3" />
+                      <p className="text-sm font-semibold text-gray-400 mb-1">Nenhuma conciliação encontrada</p>
+                      <p className="text-xs text-gray-600">
+                        {statusFilter
+                          ? 'Nenhum resultado com este status no período. Tente outro filtro.'
+                          : <>Nenhum pagamento processado neste período.{' '}
+                            <Link to="/import" className="text-indigo-400 hover:text-indigo-300">Importe um extrato</Link>{' '}
+                            ou ajuste o intervalo de datas.</>}
+                      </p>
                     </td>
                   </tr>
                 ) : items.map(r => <ReconciliationRow key={r.id} r={r} onAi={() => setAiTarget({ id: r.id, status: r.status })} />)}
@@ -1235,9 +1247,10 @@ function ChargeSummaryRow({
                           <button
                             type="button"
                             onClick={() => onAi(line.id, line.status)}
-                            className="text-[10px] text-indigo-400 hover:text-indigo-300"
+                            title="Explicar divergência com IA"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-indigo-400 border border-indigo-500/25 rounded-md hover:bg-indigo-500/10 transition-colors"
                           >
-                            IA
+                            <Sparkles size={10} /> Explicar
                           </button>
                         )}
                       </td>

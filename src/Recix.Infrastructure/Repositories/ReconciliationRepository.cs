@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Recix.Application.DTOs;
 using Recix.Application.Interfaces;
 using Recix.Domain.Entities;
@@ -7,7 +8,10 @@ using Recix.Infrastructure.Persistence;
 
 namespace Recix.Infrastructure.Repositories;
 
-public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganization currentOrg) : IReconciliationRepository
+public sealed class ReconciliationRepository(
+    RecixDbContext db,
+    ICurrentOrganization currentOrg,
+    ILogger<ReconciliationRepository> logger) : IReconciliationRepository
 {
     private IQueryable<ReconciliationResult> OrgQuery() =>
         currentOrg.OrganizationId.HasValue
@@ -150,7 +154,13 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
         if (fromAlloc > 0m)
             return fromAlloc;
 
-        return await SumLegacyAllocatedTowardChargeAsync(chargeId, ct);
+        var legacy = await SumLegacyAllocatedTowardChargeAsync(chargeId, ct);
+        if (legacy > 0m)
+            logger.LogWarning(
+                "Charge {ChargeId} has no PaymentAllocation rows; falling back to legacy ReconciliationResult sum ({Amount}).",
+                chargeId, legacy);
+
+        return legacy;
     }
 
     public async Task AddPaymentAllocationAsync(PaymentAllocation allocation, CancellationToken ct = default)

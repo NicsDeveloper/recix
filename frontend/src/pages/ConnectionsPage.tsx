@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle,
   ExternalLink,
@@ -18,34 +20,30 @@ import {
   Eye,
   EyeOff,
   Building2,
+  Terminal,
+  AlertTriangle,
+  XCircle,
+  FlaskConical,
 } from 'lucide-react'
 import { Header } from '../components/layout/Header'
+import { webhooksService } from '../services/webhooksService'
+import { useAuth } from '../contexts/AuthContext'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ProviderId = 'efi' | 'stone' | 'cielo' | 'mercadopago' | 'pagseguro' | 'outros'
 type WizardStep = 1 | 2 | 3 | 4 | 5
-
-interface SavedConnection {
-  id: string
-  provider: ProviderId
-  providerName: string
-  accountName: string
-  clientIdMasked: string
-  status: 'connected' | 'error' | 'syncing'
-  lastSync: string
-  webhookActive: boolean
-}
+type TabId = 'providers' | 'dev'
 
 // ─── Static data ──────────────────────────────────────────────────────────────
 
 const PROVIDERS: { id: ProviderId; name: string; recommended?: boolean }[] = [
-  { id: 'efi',        name: 'Efi Bank',     recommended: true },
-  { id: 'stone',      name: 'Stone' },
-  { id: 'cielo',      name: 'Cielo' },
-  { id: 'mercadopago',name: 'Mercado Pago' },
-  { id: 'pagseguro',  name: 'PagSeguro' },
-  { id: 'outros',     name: 'Outros' },
+  { id: 'efi',         name: 'Efi Bank',     recommended: true },
+  { id: 'stone',       name: 'Stone' },
+  { id: 'cielo',       name: 'Cielo' },
+  { id: 'mercadopago', name: 'Mercado Pago' },
+  { id: 'pagseguro',   name: 'PagSeguro' },
+  { id: 'outros',      name: 'Outros' },
 ]
 
 const WIZARD_STEPS = [
@@ -54,19 +52,6 @@ const WIZARD_STEPS = [
   { label: 'Teste a conexão',           sub: 'Verificaremos se está tudo certo.' },
   { label: 'Configure o webhook',       sub: 'Receba notificações em tempo real.' },
   { label: 'Conexão concluída',         sub: 'Sua conta estará conectada!' },
-]
-
-const MOCK_CONNECTIONS: SavedConnection[] = [
-  {
-    id: '1',
-    provider: 'efi',
-    providerName: 'Efi Bank',
-    accountName: 'Conta Efi - Loja Matriz',
-    clientIdMasked: 'abc123...xyz789',
-    status: 'connected',
-    lastSync: '31/05/2024 10:30',
-    webhookActive: true,
-  },
 ]
 
 // ─── Provider logos ───────────────────────────────────────────────────────────
@@ -80,30 +65,25 @@ function ProviderLogo({ id, size = 'md' }: { id: ProviderId; size?: 'sm' | 'md' 
       <span className="text-gray-400 text-[0.55em] ml-0.5 font-bold">BANK</span>
     </div>
   )
-  if (id === 'stone') return (
-    <span className={`font-bold text-emerald-400 tracking-tight ${s}`}>stone</span>
-  )
-  if (id === 'cielo') return (
-    <span className={`font-bold text-cyan-400 tracking-tight ${s}`}>cielo</span>
-  )
+  if (id === 'stone')
+    return <span className={`font-bold text-emerald-400 tracking-tight ${s}`}>stone</span>
+  if (id === 'cielo')
+    return <span className={`font-bold text-cyan-400 tracking-tight ${s}`}>cielo</span>
   if (id === 'mercadopago') return (
     <div className="flex flex-col items-center gap-0.5">
       <span className={`font-bold text-sky-400 tracking-tight leading-none ${size === 'sm' ? 'text-xs' : 'text-sm'}`}>mercado</span>
       <span className={`font-bold text-sky-400 tracking-tight leading-none ${size === 'sm' ? 'text-xs' : 'text-sm'}`}>pago</span>
     </div>
   )
-  if (id === 'pagseguro') return (
-    <span className={`font-bold text-amber-400 tracking-tight ${s}`}>PagSeguro</span>
-  )
+  if (id === 'pagseguro')
+    return <span className={`font-bold text-amber-400 tracking-tight ${s}`}>PagSeguro</span>
   return <Building2 size={size === 'sm' ? 16 : size === 'lg' ? 28 : 22} className="text-gray-400" />
 }
 
 // ─── Provider card ────────────────────────────────────────────────────────────
 
 function ProviderCard({
-  provider,
-  selected,
-  onSelect,
+  provider, selected, onSelect,
 }: {
   provider: typeof PROVIDERS[number]
   selected: boolean
@@ -125,10 +105,8 @@ function ProviderCard({
           <CheckCircle size={12} className="text-white" />
         </div>
       )}
-
       <ProviderLogo id={provider.id} size="md" />
       <span className="text-xs text-gray-400 font-medium">{provider.name}</span>
-
       {provider.recommended && (
         <span className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 text-[10px] px-2 py-0.5 rounded-full bg-indigo-600 text-white font-semibold whitespace-nowrap">
           Recomendado
@@ -151,7 +129,6 @@ function VerticalStepper({ current }: { current: WizardStep }) {
 
         return (
           <div key={n} className="flex gap-3">
-            {/* Line + circle */}
             <div className="flex flex-col items-center">
               <div className={[
                 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all',
@@ -165,9 +142,7 @@ function VerticalStepper({ current }: { current: WizardStep }) {
                 <div className={`w-px flex-1 my-1 min-h-[28px] ${done ? 'bg-indigo-600' : 'border-l border-dashed border-gray-700'}`} />
               )}
             </div>
-
-            {/* Text */}
-            <div className={`pb-6 pt-0.5 ${last ? '' : ''}`}>
+            <div className="pb-6 pt-0.5">
               <p className={`text-xs font-semibold leading-tight ${active ? 'text-indigo-400' : done ? 'text-gray-300' : 'text-gray-600'}`}>
                 {step.label}
               </p>
@@ -180,27 +155,24 @@ function VerticalStepper({ current }: { current: WizardStep }) {
   )
 }
 
-// ─── EFI mock dashboard ───────────────────────────────────────────────────────
+// ─── EFI mock dashboard (passo 1 — guia visual) ──────────────────────────────
 
 function EfiMock() {
   return (
     <div className="rounded-xl border border-gray-700 bg-[#111318] overflow-hidden shadow-2xl w-full max-w-xs">
-      {/* Header */}
       <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
         <div className="text-lg font-black tracking-tight">
           <span className="text-emerald-400">efi</span>
         </div>
       </div>
       <div className="flex">
-        {/* Sidebar */}
         <div className="w-28 border-r border-gray-700 py-2 flex-shrink-0">
           {['Visão geral', 'API', 'Aplicações', 'Credenciais', 'Webhooks'].map((item, i) => (
-            <div key={item} className={`px-3 py-2 text-[10px] cursor-default ${i === 3 ? 'bg-indigo-600/20 text-indigo-400 font-medium' : 'text-gray-500 hover:text-gray-400'}`}>
+            <div key={item} className={`px-3 py-2 text-[10px] cursor-default ${i === 3 ? 'bg-indigo-600/20 text-indigo-400 font-medium' : 'text-gray-500'}`}>
               {item}
             </div>
           ))}
         </div>
-        {/* Content */}
         <div className="flex-1 p-3">
           <p className="text-[10px] font-semibold text-gray-300 mb-3">Credenciais da aplicação</p>
           <div className="space-y-2.5">
@@ -213,12 +185,6 @@ function EfiMock() {
                 </div>
               </div>
             ))}
-            <div>
-              <p className="text-[9px] text-gray-500 mb-1">Certificado (opcional)</p>
-              <button className="w-full text-[9px] text-gray-400 border border-gray-700 rounded px-2 py-1.5 hover:bg-gray-700 transition-colors">
-                Gerar certificado
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -226,25 +192,21 @@ function EfiMock() {
   )
 }
 
-// ─── Step content panels ──────────────────────────────────────────────────────
+// ─── Wizard steps ─────────────────────────────────────────────────────────────
 
 function Step1({ onNext }: { onNext: () => void }) {
   return (
     <div className="space-y-5">
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">
-            Passo 1 de 5
-          </span>
-        </div>
+        <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">
+          Passo 1 de 5
+        </span>
         <h3 className="text-base font-semibold text-gray-100 mt-2">Obtenha suas credenciais</h3>
         <p className="text-sm text-gray-400 mt-0.5">
           Acesse sua conta Efi e gere as credenciais da API para integração.
         </p>
       </div>
-
       <div className="flex gap-6">
-        {/* Instructions */}
         <div className="flex-1 space-y-2.5">
           {[
             { n: 1, text: 'Acesse o painel do integrador Efi', cta: { label: 'Acessar Efi', href: 'https://dev.efipay.com.br' } },
@@ -261,12 +223,8 @@ function Step1({ onNext }: { onNext: () => void }) {
               <div className="flex-1 flex items-center justify-between gap-3">
                 <span className="text-sm text-gray-300">{item.text}</span>
                 {item.cta && (
-                  <a
-                    href={item.cta.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 whitespace-nowrap border border-sky-500/30 rounded-lg px-2 py-1 hover:bg-sky-500/10 transition-all"
-                  >
+                  <a href={item.cta.href} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 whitespace-nowrap border border-sky-500/30 rounded-lg px-2 py-1 hover:bg-sky-500/10 transition-all">
                     {item.cta.label} <ExternalLink size={10} />
                   </a>
                 )}
@@ -274,17 +232,12 @@ function Step1({ onNext }: { onNext: () => void }) {
             </div>
           ))}
         </div>
-
-        {/* EFI mock */}
         <div className="flex-shrink-0 hidden lg:block">
           <EfiMock />
         </div>
       </div>
-
-      <button
-        onClick={onNext}
-        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20"
-      >
+      <button onClick={onNext}
+        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
         Já tenho as credenciais <ChevronRight size={16} />
       </button>
     </div>
@@ -293,11 +246,10 @@ function Step1({ onNext }: { onNext: () => void }) {
 
 function Step2({ onNext }: { onNext: () => void }) {
   const [showSecret, setShowSecret] = useState(false)
-  const [clientId, setClientId]     = useState('')
+  const [clientId,     setClientId]     = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const [certFile, setCertFile]     = useState<File | null>(null)
-
+  const [certFile, setCertFile] = useState<File | null>(null)
   const canSubmit = clientId.trim().length > 0 && clientSecret.trim().length > 0
 
   return (
@@ -307,75 +259,52 @@ function Step2({ onNext }: { onNext: () => void }) {
           Passo 2 de 5
         </span>
         <h3 className="text-base font-semibold text-gray-100 mt-2">Informe suas credenciais</h3>
-        <p className="text-sm text-gray-400 mt-0.5">
-          Cole as credenciais geradas no painel da Efi. Seus dados são criptografados.
-        </p>
+        <p className="text-sm text-gray-400 mt-0.5">Cole as credenciais geradas no painel da Efi. Seus dados são criptografados.</p>
       </div>
-
       <div className="space-y-4 max-w-md">
         <div>
           <label className="block text-xs font-medium text-gray-300 mb-1.5">
             Client ID <span className="text-red-400">*</span>
           </label>
-          <input
-            type="text"
-            value={clientId}
-            onChange={e => setClientId(e.target.value)}
+          <input type="text" value={clientId} onChange={e => setClientId(e.target.value)}
             placeholder="Ex: Client_Id_abc123..."
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-all font-mono"
-          />
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-all font-mono" />
         </div>
-
         <div>
           <label className="block text-xs font-medium text-gray-300 mb-1.5">
             Client Secret <span className="text-red-400">*</span>
           </label>
           <div className="relative">
-            <input
-              type={showSecret ? 'text' : 'password'}
-              value={clientSecret}
+            <input type={showSecret ? 'text' : 'password'} value={clientSecret}
               onChange={e => setClientSecret(e.target.value)}
               placeholder="Cole seu Client Secret aqui"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 pr-10 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-all font-mono"
-            />
-            <button
-              onClick={() => setShowSecret(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-            >
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 pr-10 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-all font-mono" />
+            <button onClick={() => setShowSecret(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
               {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
         </div>
-
         <div>
           <label className="block text-xs font-medium text-gray-300 mb-1.5">
             Certificado <span className="text-gray-500 font-normal">(opcional)</span>
           </label>
           <input ref={fileRef} type="file" accept=".p12,.pem,.crt" className="hidden"
             onChange={e => setCertFile(e.target.files?.[0] ?? null)} />
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="w-full flex items-center gap-2 bg-gray-800 border border-dashed border-gray-700 rounded-xl px-4 py-2.5 text-sm text-gray-500 hover:border-gray-600 hover:text-gray-400 transition-all"
-          >
+          <button onClick={() => fileRef.current?.click()}
+            className="w-full flex items-center gap-2 bg-gray-800 border border-dashed border-gray-700 rounded-xl px-4 py-2.5 text-sm text-gray-500 hover:border-gray-600 hover:text-gray-400 transition-all">
             <Upload size={14} />
             {certFile ? certFile.name : 'Clique para selecionar o certificado .p12'}
           </button>
           <p className="text-[11px] text-gray-600 mt-1">Necessário apenas para algumas contas Efi.</p>
         </div>
       </div>
-
       <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/5 border border-green-500/20">
         <Shield size={14} className="text-green-400 flex-shrink-0" />
-        <p className="text-xs text-green-300">
-          Suas credenciais são criptografadas com AES-256 e nunca são exibidas novamente.
-        </p>
+        <p className="text-xs text-green-300">Suas credenciais são criptografadas com AES-256 e nunca são exibidas novamente.</p>
       </div>
-
-      <button
-        onClick={onNext}
-        disabled={!canSubmit}
-        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20"
-      >
+      <button onClick={onNext} disabled={!canSubmit}
+        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
         Conectar minha conta <ChevronRight size={16} />
       </button>
     </div>
@@ -384,7 +313,6 @@ function Step2({ onNext }: { onNext: () => void }) {
 
 function Step3({ onNext }: { onNext: () => void }) {
   const [status, setStatus] = useState<'loading' | 'success'>('loading')
-
   useState(() => {
     const t = setTimeout(() => setStatus('success'), 2200)
     return () => clearTimeout(t)
@@ -393,22 +321,14 @@ function Step3({ onNext }: { onNext: () => void }) {
   return (
     <div className="space-y-5">
       <div>
-        <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">
-          Passo 3 de 5
-        </span>
+        <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">Passo 3 de 5</span>
         <h3 className="text-base font-semibold text-gray-100 mt-2">Testando a conexão</h3>
-        <p className="text-sm text-gray-400 mt-0.5">
-          Verificando se suas credenciais estão corretas e a conta está acessível.
-        </p>
+        <p className="text-sm text-gray-400 mt-0.5">Verificando se suas credenciais estão corretas.</p>
       </div>
-
       {status === 'loading' ? (
         <div className="flex flex-col items-center justify-center py-10 gap-4">
           <Loader2 size={36} className="text-indigo-400 animate-spin" />
-          <div className="text-center">
-            <p className="text-sm font-medium text-gray-200">Conectando à Efi Bank…</p>
-            <p className="text-xs text-gray-500 mt-1">Validando credenciais e buscando dados</p>
-          </div>
+          <p className="text-sm font-medium text-gray-200">Conectando à Efi Bank…</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -425,11 +345,8 @@ function Step3({ onNext }: { onNext: () => void }) {
               </div>
             </div>
           ))}
-
-          <button
-            onClick={onNext}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 mt-2"
-          >
+          <button onClick={onNext}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 mt-2">
             Continuar <ChevronRight size={16} />
           </button>
         </div>
@@ -440,37 +357,29 @@ function Step3({ onNext }: { onNext: () => void }) {
 
 function Step4({ onNext }: { onNext: () => void }) {
   const [status, setStatus] = useState<'idle' | 'configuring' | 'done'>('idle')
-
   function configure() {
     setStatus('configuring')
     setTimeout(() => setStatus('done'), 1800)
   }
-
   return (
     <div className="space-y-5">
       <div>
-        <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">
-          Passo 4 de 5
-        </span>
+        <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">Passo 4 de 5</span>
         <h3 className="text-base font-semibold text-gray-100 mt-2">Configure o webhook</h3>
-        <p className="text-sm text-gray-400 mt-0.5">
-          O RECIX precisa ser notificado em tempo real quando um pagamento entra na sua conta.
-        </p>
+        <p className="text-sm text-gray-400 mt-0.5">O RECIX precisa ser notificado em tempo real quando um pagamento entra na sua conta.</p>
       </div>
-
-      <div className="p-4 rounded-xl bg-gray-800/60 border border-gray-700 space-y-3">
+      <div className="p-4 rounded-xl bg-gray-800/60 border border-gray-700">
         <div className="flex items-start gap-3">
           <Zap size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-medium text-gray-200">O que é um webhook?</p>
             <p className="text-sm text-gray-400 mt-1 leading-relaxed">
               É uma URL que a Efi vai chamar automaticamente toda vez que você receber um PIX.
-              O RECIX usa isso para saber — em segundos — se o pagamento bateu com o que era esperado.
+              O RECIX usa isso para saber em segundos se o pagamento bateu com o esperado.
             </p>
           </div>
         </div>
       </div>
-
       <div className="p-4 rounded-xl bg-gray-900 border border-gray-800">
         <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wider">URL do webhook</p>
         <div className="flex items-center gap-2">
@@ -482,33 +391,26 @@ function Step4({ onNext }: { onNext: () => void }) {
           </button>
         </div>
       </div>
-
       {status === 'idle' && (
-        <button
-          onClick={configure}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20"
-        >
+        <button onClick={configure}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
           <RefreshCw size={15} /> Configurar automaticamente
         </button>
       )}
-
       {status === 'configuring' && (
         <div className="flex items-center gap-3 py-2">
           <Loader2 size={18} className="text-indigo-400 animate-spin" />
           <span className="text-sm text-gray-400">Configurando webhook na Efi Bank…</span>
         </div>
       )}
-
       {status === 'done' && (
         <div className="space-y-3">
           <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/5 border border-green-500/20">
             <CheckCircle size={16} className="text-green-400 flex-shrink-0" />
             <p className="text-sm font-medium text-green-300">Webhook configurado com sucesso</p>
           </div>
-          <button
-            onClick={onNext}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20"
-          >
+          <button onClick={onNext}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
             Finalizar <ChevronRight size={16} />
           </button>
         </div>
@@ -527,7 +429,6 @@ function Step5({ onFinish }: { onFinish: () => void }) {
         <h3 className="text-lg font-bold text-gray-100">Conta conectada com sucesso!</h3>
         <p className="text-sm text-gray-400 mt-2 leading-relaxed max-w-sm">
           Seus pagamentos agora estão sendo monitorados automaticamente pelo RECIX.
-          Você será avisado imediatamente se surgir qualquer divergência.
         </p>
       </div>
       <div className="grid grid-cols-3 gap-3 w-full max-w-sm text-left">
@@ -543,10 +444,8 @@ function Step5({ onFinish }: { onFinish: () => void }) {
           </div>
         ))}
       </div>
-      <button
-        onClick={onFinish}
-        className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20"
-      >
+      <button onClick={onFinish}
+        className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
         Ir para conciliação <ChevronRight size={16} />
       </button>
     </div>
@@ -577,14 +476,8 @@ function WizardInfoPanel({ provider }: { provider: ProviderId }) {
           ))}
         </div>
       </div>
-
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-4">
-        <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-          Precisa de ajuda?
-        </h3>
-        <p className="text-xs text-gray-500">
-          Veja nossa <span className="text-indigo-400 cursor-pointer hover:underline">documentação</span> completa ou fale com nosso suporte.
-        </p>
+        <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Precisa de ajuda?</h3>
         <div className="space-y-2">
           <button className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors text-xs text-gray-300">
             <BookOpen size={13} className="text-indigo-400" /> Ver documentação
@@ -595,12 +488,9 @@ function WizardInfoPanel({ provider }: { provider: ProviderId }) {
         </div>
         <div className="flex items-start gap-2 p-2.5 rounded-lg bg-green-500/5 border border-green-500/15">
           <Shield size={12} className="text-green-400 flex-shrink-0 mt-0.5" />
-          <p className="text-[10px] text-green-400 leading-snug">
-            Suas credenciais são criptografadas e armazenadas com segurança.
-          </p>
+          <p className="text-[10px] text-green-400 leading-snug">Suas credenciais são criptografadas e armazenadas com segurança.</p>
         </div>
       </div>
-
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
         <div className="flex items-center gap-2 cursor-pointer group">
           <HelpCircle size={14} className="text-gray-500 group-hover:text-gray-300 transition-colors" />
@@ -615,80 +505,256 @@ function WizardInfoPanel({ provider }: { provider: ProviderId }) {
   )
 }
 
-// ─── Saved connections ────────────────────────────────────────────────────────
+// ─── Saved connections — real (empty state when none) ─────────────────────────
 
-function SavedConnections({ connections }: { connections: SavedConnection[] }) {
-  if (connections.length === 0) return null
+function SavedConnections({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-gray-200">Conexões salvas</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Gerencie suas conexões ativas.</p>
+          <h2 className="text-sm font-semibold text-gray-200">Conexões ativas</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Provedores conectados à sua organização.</p>
         </div>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors">
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors"
+        >
           <Plus size={13} /> Nova conexão
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-gray-800 text-gray-500">
-              <th className="px-5 py-3 text-left font-medium">Provedor</th>
-              <th className="px-4 py-3 text-left font-medium">Conta</th>
-              <th className="px-4 py-3 text-left font-medium">Status</th>
-              <th className="px-4 py-3 text-left font-medium">Última sincronização</th>
-              <th className="px-4 py-3 text-left font-medium">Webhooks</th>
-              <th className="px-4 py-3 text-left font-medium">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {connections.map(conn => (
-              <tr key={conn.id} className="border-b border-gray-800/40 hover:bg-gray-800/20 transition-colors">
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
-                      <ProviderLogo id={conn.provider} size="sm" />
-                    </div>
-                    <span className="font-medium text-gray-200">{conn.providerName}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3.5">
-                  <p className="text-gray-300">{conn.accountName}</p>
-                  <p className="text-gray-600 font-mono text-[10px] mt-0.5">Client ID: {conn.clientIdMasked}</p>
-                </td>
-                <td className="px-4 py-3.5">
-                  <span className="flex items-center gap-1.5 text-green-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                    Conectado
-                  </span>
-                </td>
-                <td className="px-4 py-3.5 text-gray-400">{conn.lastSync}</td>
-                <td className="px-4 py-3.5">
-                  <span className={`flex items-center gap-1.5 ${conn.webhookActive ? 'text-green-400' : 'text-red-400'}`}>
-                    <CheckCircle size={12} />
-                    {conn.webhookActive ? 'Ativo' : 'Inativo'}
-                  </span>
-                </td>
-                <td className="px-4 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors">
-                      <Settings size={11} /> Configurações
-                    </button>
-                    <button className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 transition-colors">
-                      <MoreHorizontal size={13} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="px-5 py-14 text-center">
+        <div className="w-10 h-10 rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center mx-auto mb-3">
+          <Building2 size={18} className="text-gray-600" />
+        </div>
+        <p className="text-sm font-semibold text-gray-400 mb-1">Nenhuma conexão configurada</p>
+        <p className="text-xs text-gray-600 max-w-xs mx-auto">
+          Conecte seu banco ou gateway acima para começar a receber pagamentos automaticamente.
+          Sem conexão ativa, use o{' '}
+          <button
+            onClick={() => {}} // handled by parent tab switch
+            className="text-indigo-400 hover:text-indigo-300"
+          >
+            simulador de desenvolvimento
+          </button>
+          {' '}para testar.
+        </p>
       </div>
-      <div className="px-5 py-3 border-t border-gray-800">
-        <button className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-          Ver todas as conexões <ChevronRight size={13} />
-        </button>
+    </div>
+  )
+}
+
+// ─── Developer tab — simulador PIX ───────────────────────────────────────────
+
+interface SimFormState {
+  eventId: string
+  externalChargeId: string
+  referenceId: string
+  paidAmount: string
+  paidAt: string
+  provider: string
+}
+
+function freshEventId() { return `evt_${Date.now()}` }
+function nowLocal() { return new Date().toISOString().slice(0, 16) }
+
+const SIM_SCENARIOS = [
+  {
+    id: 'correct',
+    label: 'Pagamento correto',
+    icon: <CheckCircle size={14} />,
+    color: 'text-green-400 border-green-500/30 bg-green-500/5 hover:bg-green-500/10',
+    description: 'Pagamento que deve conciliar com uma cobrança existente',
+    apply: (): Partial<SimFormState> => ({ externalChargeId: '', referenceId: '', paidAmount: '150.75', provider: 'FakePixProvider' }),
+  },
+  {
+    id: 'mismatch',
+    label: 'Valor divergente',
+    icon: <AlertTriangle size={14} />,
+    color: 'text-orange-400 border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10',
+    description: 'Valor diferente do esperado — gera AmountMismatch',
+    apply: (): Partial<SimFormState> => ({ externalChargeId: '', referenceId: '', paidAmount: '99.00', provider: 'FakePixProvider' }),
+  },
+  {
+    id: 'nocharge',
+    label: 'Sem cobrança',
+    icon: <XCircle size={14} />,
+    color: 'text-red-400 border-red-500/30 bg-red-500/5 hover:bg-red-500/10',
+    description: 'ExternalChargeId inválido — gera PaymentWithoutCharge',
+    apply: (): Partial<SimFormState> => ({ externalChargeId: `fakepsp_INVALID_${Date.now()}`, referenceId: '', paidAmount: '150.75', provider: 'FakePixProvider' }),
+  },
+  {
+    id: 'duplicate',
+    label: 'Duplicado',
+    icon: <Copy size={14} />,
+    color: 'text-purple-400 border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10',
+    description: 'Mesmo EventId — gera IgnoredDuplicate',
+    apply: (current: SimFormState): Partial<SimFormState> => ({
+      eventId: current.eventId,
+      paidAmount: current.paidAmount || '150.75',
+    }),
+  },
+]
+
+function DevTab() {
+  const queryClient = useQueryClient()
+  const [form, setForm] = useState<SimFormState>({
+    eventId: freshEventId(),
+    externalChargeId: '',
+    referenceId: '',
+    paidAmount: '',
+    paidAt: nowLocal(),
+    provider: 'FakePixProvider',
+  })
+  const [result, setResult] = useState<{ status: string; eventId: string } | null>(null)
+
+  const { mutate, isPending, error } = useMutation({
+    mutationFn: () =>
+      webhooksService.sendPixWebhook({
+        eventId:          form.eventId,
+        externalChargeId: form.externalChargeId || undefined,
+        referenceId:      form.referenceId      || undefined,
+        paidAmount:       parseFloat(form.paidAmount),
+        paidAt:           new Date(form.paidAt).toISOString(),
+        provider:         form.provider,
+      }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['payment-events'] })
+      queryClient.invalidateQueries({ queryKey: ['charges'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      setResult({ status: res.status, eventId: res.eventId })
+    },
+  })
+
+  function set(field: keyof SimFormState, value: string) {
+    setForm(f => ({ ...f, [field]: value }))
+    setResult(null)
+  }
+
+  function applyScenario(s: typeof SIM_SCENARIOS[number]) {
+    const patch = s.apply(form)
+    setForm(f => ({ ...f, ...patch, eventId: patch.eventId ?? freshEventId(), paidAt: nowLocal() }))
+    setResult(null)
+  }
+
+  const isValid =
+    form.eventId.trim() !== '' &&
+    !isNaN(parseFloat(form.paidAmount)) &&
+    parseFloat(form.paidAmount) > 0
+
+  return (
+    <div className="space-y-5">
+      {/* Banner de contexto */}
+      <div className="flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3.5">
+        <FlaskConical size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-amber-300">Ambiente de desenvolvimento</p>
+          <p className="text-xs text-amber-500/80 mt-0.5 leading-relaxed">
+            Os webhooks enviados aqui chegam ao motor real de conciliação e geram resultados visíveis em{' '}
+            <span className="text-amber-300 font-medium">Conciliações</span> e{' '}
+            <span className="text-amber-300 font-medium">Eventos de Pagamento</span>.
+            Use para testar cenários antes de conectar um provedor real.
+          </p>
+        </div>
+      </div>
+
+      {/* Cenários pré-configurados */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+        <h3 className="text-sm font-semibold text-gray-200 mb-1">Cenários pré-configurados</h3>
+        <p className="text-xs text-gray-500 mb-4">Clique para preencher o formulário com dados de teste.</p>
+        <div className="grid grid-cols-2 gap-2">
+          {SIM_SCENARIOS.map(s => (
+            <button key={s.id} onClick={() => applyScenario(s)}
+              className={`flex items-start gap-2.5 px-3 py-3 text-sm font-medium rounded-xl border transition-colors text-left ${s.color}`}>
+              <span className="mt-0.5 flex-shrink-0">{s.icon}</span>
+              <div>
+                <p className="font-semibold leading-tight">{s.label}</p>
+                <p className="text-[11px] opacity-70 mt-0.5 leading-tight font-normal">{s.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Formulário */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+        <h3 className="text-sm font-semibold text-gray-200 mb-5">Enviar webhook PIX</h3>
+        <form
+          onSubmit={e => { e.preventDefault(); setResult(null); mutate() }}
+          className="space-y-4 max-w-lg"
+        >
+          {error && (
+            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
+              {(error as Error).message}
+            </div>
+          )}
+          {result && (
+            <div className={`rounded-lg p-3 text-sm border ${
+              result.status === 'Received'
+                ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                : 'bg-purple-500/10 border-purple-500/20 text-purple-400'
+            }`}>
+              {result.status === 'Received'
+                ? '✓ Webhook enviado — aguardando processamento.'
+                : '⚠ Evento duplicado detectado (IgnoredDuplicate).'}
+              <p className="text-xs mt-0.5 opacity-70 font-mono">EventId: {result.eventId}</p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">EventId</label>
+            <div className="flex gap-2">
+              <input type="text" value={form.eventId} onChange={e => set('eventId', e.target.value)}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors" required />
+              <button type="button" onClick={() => set('eventId', freshEventId())} title="Gerar novo EventId"
+                className="px-3 py-2.5 text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-800 hover:text-gray-200 transition-colors">
+                <RefreshCw size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              ExternalChargeId <span className="text-gray-500 font-normal">(opcional)</span>
+            </label>
+            <input type="text" placeholder="fakepsp_abc123..." value={form.externalChargeId}
+              onChange={e => set('externalChargeId', e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors placeholder-gray-500" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              ReferenceId <span className="text-gray-500 font-normal">(opcional)</span>
+            </label>
+            <input type="text" placeholder="RECIX-20260429-000001" value={form.referenceId}
+              onChange={e => set('referenceId', e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors placeholder-gray-500" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">Valor Pago (R$)</label>
+            <input type="number" step="0.01" min="0.01" placeholder="150.75" value={form.paidAmount}
+              onChange={e => set('paidAmount', e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors placeholder-gray-500" required />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">Data/Hora do Pagamento</label>
+            <input type="datetime-local" value={form.paidAt} onChange={e => set('paidAt', e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">Provider</label>
+            <input type="text" value={form.provider} onChange={e => set('provider', e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors" />
+          </div>
+
+          <button type="submit" disabled={isPending || !isValid}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            {isPending && <Loader2 size={14} className="animate-spin" />}
+            {isPending ? 'Enviando…' : 'Enviar webhook'}
+          </button>
+        </form>
       </div>
     </div>
   )
@@ -697,39 +763,39 @@ function SavedConnections({ connections }: { connections: SavedConnection[] }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function ConnectionsPage() {
+  const { currentOrg } = useAuth()
+  const isAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+
+  const tabParam = searchParams.get('tab') as TabId | null
+  const [tab, setTab] = useState<TabId>(tabParam === 'dev' && isAdmin ? 'dev' : 'providers')
+
   const [selected,   setSelected]   = useState<ProviderId | null>('efi')
   const [wizardStep, setWizardStep] = useState<WizardStep>(1)
-  const [connections, setConnections] = useState<SavedConnection[]>(MOCK_CONNECTIONS)
+  const [showWizard, setShowWizard] = useState(false)
 
-  function nextStep() {
-    setWizardStep(s => Math.min(s + 1, 5) as WizardStep)
-  }
-
-  function finishWizard() {
-    if (selected) {
-      const prov = PROVIDERS.find(p => p.id === selected)!
-      const already = connections.find(c => c.provider === selected)
-      if (!already) {
-        setConnections(prev => [...prev, {
-          id:            crypto.randomUUID(),
-          provider:      selected,
-          providerName:  prov.name,
-          accountName:   `Conta ${prov.name} - Principal`,
-          clientIdMasked:'***...***',
-          status:        'connected',
-          lastSync:      new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          webhookActive: true,
-        }])
-      }
-    }
-    setWizardStep(1)
-    setSelected(null)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  function goTab(next: TabId) {
+    setTab(next)
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev)
+      if (next === 'providers') n.delete('tab')
+      else n.set('tab', next)
+      return n
+    }, { replace: true })
   }
 
   function selectProvider(id: ProviderId) {
     setSelected(id)
     setWizardStep(1)
+    setShowWizard(true)
+  }
+
+  function finishWizard() {
+    setWizardStep(1)
+    setSelected(null)
+    setShowWizard(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -744,77 +810,96 @@ export function ConnectionsPage() {
         }
       />
 
-      {/* Value block */}
-      <div className="rounded-2xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-transparent p-5 flex items-start gap-5">
-        <div className="w-10 h-10 rounded-xl bg-indigo-500/15 flex items-center justify-center flex-shrink-0">
-          <Zap size={18} className="text-indigo-400" />
-        </div>
-        <div>
-          <h2 className="text-sm font-semibold text-gray-100 mb-2">O que acontece depois de conectar?</h2>
-          <div className="grid sm:grid-cols-3 gap-2">
-            {[
-              'Seus pagamentos serão monitorados automaticamente',
-              'Você não precisa mais importar extratos manualmente',
-              'O RECIX detecta divergências em tempo real e te avisa',
-            ].map(item => (
-              <div key={item} className="flex items-start gap-2">
-                <CheckCircle size={13} className="text-indigo-400 flex-shrink-0 mt-0.5" />
-                <span className="text-xs text-gray-400 leading-snug">{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-900 border border-gray-800 rounded-xl w-fit">
+        <button
+          onClick={() => goTab('providers')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            tab === 'providers' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          Provedores
+        </button>
+        {isAdmin && (
+          <button
+            onClick={() => goTab('dev')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              tab === 'dev'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                : 'text-gray-500 hover:text-amber-400 hover:bg-amber-500/8'
+            }`}
+          >
+            <Terminal size={13} /> Desenvolvedor
+          </button>
+        )}
       </div>
 
-      {/* Step 1 — Provider selection */}
-      <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
-        <h2 className="text-sm font-semibold text-gray-200 mb-1">1. Escolha seu provedor</h2>
-        <p className="text-xs text-gray-500 mb-5">Selecione o banco ou gateway que você utiliza para receber pagamentos.</p>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {PROVIDERS.map(p => (
-            <ProviderCard
-              key={p.id}
-              provider={p}
-              selected={selected === p.id}
-              onSelect={() => selectProvider(p.id)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Step 2 — Wizard */}
-      {selected && (
-        <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
-          <div className="mb-5">
-            <h2 className="text-sm font-semibold text-gray-200">
-              2. Conecte sua conta {PROVIDERS.find(p => p.id === selected)?.name}
-            </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Siga o passo a passo para conectar sua conta de forma segura.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr_280px] gap-6">
-            {/* Vertical stepper */}
-            <VerticalStepper current={wizardStep} />
-
-            {/* Step content */}
-            <div className="rounded-xl border border-gray-800 bg-gray-800/30 p-5">
-              {wizardStep === 1 && <Step1 onNext={nextStep} />}
-              {wizardStep === 2 && <Step2 onNext={nextStep} />}
-              {wizardStep === 3 && <Step3 onNext={nextStep} />}
-              {wizardStep === 4 && <Step4 onNext={nextStep} />}
-              {wizardStep === 5 && <Step5 onFinish={finishWizard} />}
+      {/* ── Aba Provedores ────────────────────────────────────────────────── */}
+      {tab === 'providers' && (
+        <>
+          {/* Value block */}
+          <div className="rounded-2xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-transparent p-5 flex items-start gap-5">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/15 flex items-center justify-center flex-shrink-0">
+              <Zap size={18} className="text-indigo-400" />
             </div>
-
-            {/* Info panel */}
-            <WizardInfoPanel provider={selected} />
+            <div>
+              <h2 className="text-sm font-semibold text-gray-100 mb-2">O que acontece depois de conectar?</h2>
+              <div className="grid sm:grid-cols-3 gap-2">
+                {[
+                  'Seus pagamentos serão monitorados automaticamente',
+                  'Você não precisa mais importar extratos manualmente',
+                  'O RECIX detecta divergências em tempo real e te avisa',
+                ].map(item => (
+                  <div key={item} className="flex items-start gap-2">
+                    <CheckCircle size={13} className="text-indigo-400 flex-shrink-0 mt-0.5" />
+                    <span className="text-xs text-gray-400 leading-snug">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* Provider selection */}
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
+            <h2 className="text-sm font-semibold text-gray-200 mb-1">1. Escolha seu provedor</h2>
+            <p className="text-xs text-gray-500 mb-5">Selecione o banco ou gateway que você utiliza para receber pagamentos.</p>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              {PROVIDERS.map(p => (
+                <ProviderCard key={p.id} provider={p} selected={selected === p.id} onSelect={() => selectProvider(p.id)} />
+              ))}
+            </div>
+          </div>
+
+          {/* Wizard */}
+          {selected && showWizard && (
+            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6">
+              <div className="mb-5">
+                <h2 className="text-sm font-semibold text-gray-200">
+                  2. Conecte sua conta {PROVIDERS.find(p => p.id === selected)?.name}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">Siga o passo a passo para conectar sua conta de forma segura.</p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr_280px] gap-6">
+                <VerticalStepper current={wizardStep} />
+                <div className="rounded-xl border border-gray-800 bg-gray-800/30 p-5">
+                  {wizardStep === 1 && <Step1 onNext={() => setWizardStep(2)} />}
+                  {wizardStep === 2 && <Step2 onNext={() => setWizardStep(3)} />}
+                  {wizardStep === 3 && <Step3 onNext={() => setWizardStep(4)} />}
+                  {wizardStep === 4 && <Step4 onNext={() => setWizardStep(5)} />}
+                  {wizardStep === 5 && <Step5 onFinish={() => { finishWizard(); navigate('/reconciliations') }} />}
+                </div>
+                <WizardInfoPanel provider={selected} />
+              </div>
+            </div>
+          )}
+
+          {/* Saved connections */}
+          <SavedConnections onAdd={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
+        </>
       )}
 
-      {/* Saved connections */}
-      <SavedConnections connections={connections} />
+      {/* ── Aba Desenvolvedor ─────────────────────────────────────────────── */}
+      {tab === 'dev' && isAdmin && <DevTab />}
     </div>
   )
 }

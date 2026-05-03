@@ -1,180 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   Settings,
   Bell,
   CheckCircle,
   Loader2,
   ExternalLink,
-  ShieldCheck,
   BarChart3,
-  CalendarDays,
-  TrendingUp,
-  AlertTriangle,
   Users,
   Shield,
   Eye,
   Trash2,
   ChevronDown,
+  ArrowRight,
 } from 'lucide-react'
 import { Header } from '../components/layout/Header'
 import { LoadingState } from '../components/ui/LoadingState'
 import { ErrorState } from '../components/ui/ErrorState'
 import { settingsService } from '../services/settingsService'
-import { dashboardService } from '../services/dashboardService'
-import { METRIC_LABELS } from '../lib/metricLabels'
 import { organizationsService } from '../services/organizationsService'
-import { formatCurrency, formatDateTime } from '../lib/formatters'
+import { formatDateTime } from '../lib/formatters'
 import { useAuth } from '../contexts/AuthContext'
-import type { ClosingReport, MemberDto, UpdateAlertConfigRequest } from '../types'
+import type { MemberDto, UpdateAlertConfigRequest } from '../types'
 
-function toInputDate(date: Date) {
-  const yyyy = date.getFullYear()
-  const mm   = String(date.getMonth() + 1).padStart(2, '0')
-  const dd   = String(date.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-function ClosingReportSection() {
-  const today    = new Date()
-  const [from, setFrom] = useState(toInputDate(new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000)))
-  const [to, setTo]     = useState(toInputDate(today))
-  const [queried, setQueried] = useState(false)
-
-  const { data: report, isLoading, isError, refetch } = useQuery<ClosingReport>({
-    queryKey: ['closing-report', from, to],
-    queryFn: () => dashboardService.getClosingReport({ fromDate: from, toDate: to }),
-    enabled: queried,
-    staleTime: 60_000,
-  })
-
-  function StatRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
-    return (
-      <div className="flex items-center justify-between py-2 border-b border-gray-800/60 last:border-0">
-        <span className="text-sm text-gray-400">{label}</span>
-        <div className="text-right">
-          <span className="text-sm font-semibold text-gray-200">{value}</span>
-          {sub && <p className="text-xs text-gray-600">{sub}</p>}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart3 size={16} className="text-indigo-400" />
-        <h2 className="text-sm font-semibold text-gray-200">Relatório de Fechamento</h2>
-      </div>
-      <p className="text-xs text-gray-500 mb-4">
-        Visão consolidada do período: quanto era esperado receber, quanto realmente entrou e
-        o que ficou em aberto ou divergiu.
-      </p>
-
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500">De</label>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-3 py-1.5" />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500">Até</label>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-3 py-1.5" />
-        </div>
-        <button
-          onClick={() => { setQueried(true); void refetch() }}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-        >
-          {isLoading ? <Loader2 size={13} className="animate-spin" /> : <CalendarDays size={13} />}
-          Gerar
-        </button>
-      </div>
-
-      {isError && <p className="text-sm text-red-400">Erro ao carregar relatório.</p>}
-
-      {report && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Financeiro */}
-          <div className="rounded-lg border border-gray-800 p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <TrendingUp size={11} /> Financeiro
-            </p>
-            <StatRow label={METRIC_LABELS.closingExpectedLabel} value={formatCurrency(report.expectedAmount)} />
-            <StatRow label="Recebido" value={formatCurrency(report.receivedAmount)} sub={`${report.recoveryRate}% do esperado`} />
-            <StatRow label="Divergente" value={formatCurrency(report.divergentAmount)} />
-            <StatRow label="Pendente" value={formatCurrency(report.pendingAmount)} />
-            <div className="mt-3">
-              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                <span>Taxa de recuperação</span>
-                <span className="font-semibold text-gray-300">{report.recoveryRate}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all"
-                  style={{ width: `${Math.min(report.recoveryRate, 100)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Conciliações */}
-          <div className="rounded-lg border border-gray-800 p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <ShieldCheck size={11} /> Conciliações
-            </p>
-            <StatRow label="Total" value={String(report.reconciliationsTotal)} />
-            <StatRow label="Conciliados" value={String(report.reconciliationsMatched)} />
-            {report.reconciliationsAmountMismatch > 0 && (
-              <StatRow label="Valor divergente" value={String(report.reconciliationsAmountMismatch)} />
-            )}
-            {report.reconciliationsDuplicate > 0 && (
-              <StatRow label="Duplicados" value={String(report.reconciliationsDuplicate)} />
-            )}
-            {report.reconciliationsNoCharge > 0 && (
-              <StatRow label="Sem cobrança" value={String(report.reconciliationsNoCharge)} />
-            )}
-            {report.reconciliationsExpiredPaid > 0 && (
-              <StatRow label="Expiradas pagas" value={String(report.reconciliationsExpiredPaid)} />
-            )}
-            <StatRow label="Cobranças pendentes/expiradas" value={String(report.pendingCharges + report.expiredCharges)} />
-          </div>
-
-          {/* Não conciliadas */}
-          {report.unreconciled.length > 0 && (
-            <div className="md:col-span-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle size={14} className="text-amber-400" />
-                <p className="text-xs font-semibold text-amber-400">
-                  {report.unreconciled.length} cobrança(s) sem conciliação no período
-                </p>
-              </div>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {report.unreconciled.map(c => (
-                  <div key={c.id} className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-gray-400 truncate max-w-[200px]">{c.referenceId}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-amber-300 font-semibold">{formatCurrency(c.amount)}</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${c.status === 'Expired' ? 'bg-gray-800 text-gray-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                        {c.status === 'Expired' ? 'Expirado' : 'Pendente'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {report.unreconciled.length === 50 && (
-                <p className="text-xs text-gray-500 mt-2">Mostrando os 50 de maior valor.</p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -435,7 +284,7 @@ function MembersSection() {
   if (!isOwnerOrAdmin) return null
 
   return (
-    <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+    <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-800">
         <Users size={16} className="text-indigo-400" />
         <div>
@@ -468,14 +317,48 @@ function MembersSection() {
 
 export function SettingsPage() {
   return (
-    <div>
+    <div className="space-y-8">
       <Header
         title="Configurações"
-        subtitle="Fechamento financeiro, notificações e membros da organização"
+        subtitle="Notificações de divergência e gestão de membros da organização"
       />
-      <ClosingReportSection />
-      <AlertConfigSection />
-      <MembersSection />
+
+      {/* Relatório de fechamento — atalho para a página dedicada */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <BarChart3 size={13} /> Fechamento
+        </h2>
+        <Link
+          to="/reports"
+          className="flex items-center justify-between gap-4 rounded-xl border border-gray-800 bg-gray-900 px-5 py-4 hover:bg-gray-800/60 hover:border-gray-700 transition-all group"
+        >
+          <div>
+            <p className="text-sm font-semibold text-gray-200 group-hover:text-white transition-colors">
+              Relatório de fechamento do período
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Esperado vs. recebido, divergências, taxa de conciliação e export em CSV / PDF.
+            </p>
+          </div>
+          <ArrowRight size={16} className="text-gray-600 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
+        </Link>
+      </section>
+
+      {/* Notificações */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Bell size={13} /> Notificações
+        </h2>
+        <AlertConfigSection />
+      </section>
+
+      {/* Membros */}
+      <section>
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Users size={13} /> Membros
+        </h2>
+        <MembersSection />
+      </section>
     </div>
   )
 }

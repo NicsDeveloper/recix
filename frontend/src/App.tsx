@@ -13,7 +13,6 @@ import { ChargesPage } from './pages/ChargesPage'
 import { ChargeDetailPage } from './pages/ChargeDetailPage'
 import { PaymentEventsPage } from './pages/PaymentEventsPage'
 import { ReconciliationsPage } from './pages/ReconciliationsPage'
-import { WebhookSimulatorPage } from './pages/WebhookSimulatorPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ImportPage } from './pages/ImportPage'
@@ -86,7 +85,7 @@ function AppCore() {
           <Route path="/import" element={<ImportPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/webhooks/simulator" element={<WebhookSimulatorPage />} />
+          <Route path="/webhooks/simulator" element={<Navigate to="/connections?tab=dev" replace />} />
           <Route path="/join-requests" element={<JoinRequestsPage />} />
         </Route>
 

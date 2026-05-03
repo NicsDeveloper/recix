@@ -84,9 +84,17 @@ public sealed class ProcessPaymentEventUseCase
             var chargeId = outcome.Result.ChargeId ?? outcome.Charge?.Id;
             if (chargeId.HasValue)
             {
-                // Pagamento em cobrança já expirada: mantém Divergente para auditoria (não fecha como Pago só pela soma).
-                if (outcome.Result.Status != ReconciliationStatus.ExpiredChargePaid)
+                if (outcome.Result.Status == ReconciliationStatus.ExpiredChargePaid)
+                {
+                    // Engine applied MarkAsDivergent() in memory; persist without calling ChargeBalanceApplier,
+                    // which would incorrectly transition an expired charge to Paid when sum == amount.
+                    if (outcome.Charge is { } expiredCharge)
+                        await _charges.UpdateAsync(expiredCharge, cancellationToken);
+                }
+                else
+                {
                     await _chargeBalanceApplier.RecalculateAsync(chargeId.Value, cancellationToken);
+                }
 
                 _broadcaster.Publish(RecixEvent.ChargeUpdated(chargeId.Value, paymentEvent.OrganizationId));
             }

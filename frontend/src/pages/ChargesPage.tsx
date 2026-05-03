@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Plus, Eye, Search, Download, CalendarDays, SlidersHorizontal,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Check, Clock, AlertTriangle, MoreVertical, TrendingUp,
+  Check, Clock, AlertTriangle, MoreVertical, TrendingUp, CreditCard,
 } from 'lucide-react'
 import { chargesService } from '../services/chargesService'
 import { dashboardService } from '../services/dashboardService'
@@ -590,7 +590,7 @@ export function ChargesPage() {
         {/* Tabela */}
         <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm min-w-[1100px]">
+            <table className="w-full text-left text-sm min-w-[820px]">
               <thead>
                 <tr className="border-b border-gray-800 bg-gray-950/80">
                   <th className="w-10 px-3 py-3">
@@ -601,7 +601,7 @@ export function ChargesPage() {
                       onChange={e => toggleAll(e.target.checked)}
                     />
                   </th>
-                  {['Referência', 'Cliente', 'Valor', 'Status', 'Auditoria', 'Recebido', 'Pendente', 'Vencimento', 'Criado em', 'Ações'].map(h => (
+                  {['Referência', 'Cliente', 'Valor', 'Status', 'Auditoria', 'Vencimento', 'Ações'].map(h => (
                     <th
                       key={h}
                       className="px-3 py-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap"
@@ -614,20 +614,41 @@ export function ChargesPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-16 text-center text-gray-500 text-sm">
+                    <td colSpan={8} className="px-4 py-16 text-center text-gray-500 text-sm">
                       Carregando…
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-16 text-center text-gray-500 text-sm">
-                      Nenhuma cobrança nesta página com os filtros atuais.
+                    <td colSpan={8} className="px-4 py-14 text-center">
+                      <CreditCard size={28} className="mx-auto text-gray-700 mb-3" />
+                      <p className="text-sm font-semibold text-gray-400 mb-1">Nenhuma cobrança encontrada</p>
+                      <p className="text-xs text-gray-600 mb-4 max-w-xs mx-auto">
+                        {search.trim()
+                          ? `Sem resultados para "${search}". Verifique a referência ou o nome.`
+                          : statusTab !== 'all'
+                            ? 'Nenhuma cobrança com este status no período. Ajuste o filtro ou o intervalo de datas.'
+                            : 'Nenhuma cobrança no período. Importe suas vendas ou crie uma cobrança manual.'}
+                      </p>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowModal(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-300 border border-indigo-500/30 rounded-lg hover:bg-indigo-500/10 transition-colors"
+                        >
+                          <Plus size={13} /> Nova cobrança
+                        </button>
+                        <Link
+                          to="/import"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                        >
+                          Importar vendas
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   items.map(c => {
-                    const ri = receivedInfo(c)
-                    const pc = pendingCol(c)
                     const ex = expiryHint(c)
                     return (
                       <tr
@@ -658,41 +679,11 @@ export function ChargesPage() {
                         <td className="px-3 py-3 w-[100px]">
                           <AuditAggregateBadge label={c.reconciliationAggregate ?? null} />
                         </td>
-                        <td className="px-3 py-3 w-40">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-[11px] text-gray-500">{ri.pct}%</span>
-                            <span className="text-[11px] text-gray-400 tabular-nums">{ri.label}</span>
-                          </div>
-                          <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400"
-                              style={{ width: `${ri.pct}%` }}
-                            />
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 tabular-nums whitespace-nowrap">
-                          <span
-                            className={
-                              pc.tone === 'ok'
-                                ? 'text-emerald-400 font-semibold'
-                                : pc.tone === 'danger'
-                                  ? 'text-red-400 font-semibold'
-                                  : 'text-orange-400 font-semibold'
-                            }
-                          >
-                            {formatCurrency(pc.value)}
-                          </span>
-                        </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           <p className={`text-[12px] ${ex.danger ? 'text-red-400' : 'text-gray-300'}`}>{ex.line}</p>
                           {ex.sub && (
                             <p className={`text-[10px] mt-0.5 ${ex.danger ? 'text-red-400/90' : 'text-gray-600'}`}>{ex.sub}</p>
                           )}
-                        </td>
-                        <td className="px-3 py-3 text-gray-500 text-[12px] whitespace-nowrap">
-                          {new Date(c.createdAt).toLocaleString('pt-BR', {
-                            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-                          })}
                         </td>
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1 relative">

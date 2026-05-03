@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   CheckCircle, AlertTriangle, Copy, Ban, Clock,
-  ArrowRight, ChevronRight, Download, FileText, Bell, Eye,
+  ArrowRight, ChevronRight, Download, FileText, Bell, Eye, Plus,
 } from 'lucide-react'
 import { dashboardService }          from '../services/dashboardService'
 import { reconciliationsService }    from '../services/reconciliationsService'
@@ -281,10 +281,10 @@ function DivergenceSummary({
 // ─── Quick Actions ─────────────────────────────────────────────────────────────
 
 const QUICK_ACTIONS = [
-  { icon: <Download size={18}/>, bg: 'bg-indigo-500/15', color: '#818cf8', title: 'Importar extrato',   sub: 'Traga seu extrato bancário',  to: '/import' },
-  { icon: <FileText size={18}/>, bg: 'bg-cyan-500/15',   color: '#22d3ee', title: 'Gerar relatório',    sub: 'Baixe em PDF ou Excel',       to: '/reports' },
-  { icon: <AlertTriangle size={18}/>, bg: 'bg-orange-500/15', color: '#f97316', title: 'Ver divergências', sub: 'Analise e resolva pendências', to: '/reconciliations?filter=divergent' },
-  { icon: <Bell size={18}/>,     bg: 'bg-amber-500/15',  color: '#fbbf24', title: 'Configurar alertas', sub: 'Receba avisos importantes',    to: '/alerts' },
+  { icon: <Plus size={18}/>,     bg: 'bg-emerald-500/15', color: '#34d399', title: 'Nova cobrança',     sub: 'Registre uma nova venda',     to: '/charges' },
+  { icon: <Download size={18}/>, bg: 'bg-indigo-500/15',  color: '#818cf8', title: 'Importar extrato',  sub: 'Traga seu extrato bancário',  to: '/import' },
+  { icon: <FileText size={18}/>, bg: 'bg-cyan-500/15',    color: '#22d3ee', title: 'Gerar relatório',   sub: 'Baixe em PDF ou Excel',       to: '/reports' },
+  { icon: <Bell size={18}/>,     bg: 'bg-amber-500/15',   color: '#fbbf24', title: 'Configurar alertas',sub: 'Receba avisos importantes',    to: '/alerts' },
 ]
 
 // ─── Page ──────────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { dashboardService } from '../../services/dashboardService'
 import { organizationsService } from '../../services/organizationsService'
+import { reconciliationsService } from '../../services/reconciliationsService'
 import { useAuth } from '../../contexts/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -57,7 +58,7 @@ const navItems: NavItem[] = [
     kind: 'link',
     label: 'Simulador PIX',
     icon: PlayCircle,
-    to: '/webhooks/simulator',
+    to: '/connections?tab=dev',
     badge: 'Novo',
     adminOnly: true,
   },
@@ -107,6 +108,15 @@ export function Sidebar() {
     staleTime: 30_000,
     refetchInterval: 120_000,
   })
+
+  // Badge de revisões pendentes em conciliações — visível para todos
+  const { data: pendingReviewData } = useQuery({
+    queryKey: ['pending-review'],
+    queryFn: () => reconciliationsService.getPendingReview(),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  })
+  const pendingReviewCount = pendingReviewData?.totalCount ?? 0
 
   return (
     <aside className="w-60 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
@@ -168,7 +178,11 @@ export function Sidebar() {
             >
               <Icon size={15} className="flex-shrink-0" />
               <span className="truncate">{item.label}</span>
-              {item.label === 'Alertas' && isAdmin && pendingCount > 0 ? (
+              {item.label === 'Conciliações' && pendingReviewCount > 0 ? (
+                <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold">
+                  {pendingReviewCount}
+                </span>
+              ) : item.label === 'Alertas' && isAdmin && pendingCount > 0 ? (
                 <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold">
                   {pendingCount}
                 </span>
