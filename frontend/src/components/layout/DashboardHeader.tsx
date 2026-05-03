@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Calendar, ChevronDown, Plus } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
+import { Calendar, ChevronDown } from 'lucide-react'
 
 export type DashboardDatePreset = 'today' | '7d' | '30d'
 
@@ -38,8 +36,6 @@ export function DashboardHeader({
   title, subtitle, fromDate, toDate, updatedAt,
   onFromDateChange, onToDateChange, onDatePreset,
 }: DashboardHeaderProps) {
-  const { currentOrg } = useAuth()
-  const isAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
   const ago = timeAgo(updatedAt)
   const [rangeOpen, setRangeOpen] = useState(false)
   const rangeWrapRef = useRef<HTMLDivElement>(null)
@@ -161,16 +157,6 @@ export function DashboardHeader({
           </div>
         )}
 
-        {/* Simulate event */}
-        {isAdmin && (
-          <Link
-            to="/webhooks/simulator"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors whitespace-nowrap shadow-lg shadow-indigo-500/20"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            Simular Evento
-          </Link>
-        )}
       </div>
     </div>
   )

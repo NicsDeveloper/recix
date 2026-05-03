@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle,
   ExternalLink,
@@ -21,13 +21,13 @@ import {
   EyeOff,
   Building2,
   Terminal,
-  AlertTriangle,
-  XCircle,
-  FlaskConical,
 } from 'lucide-react'
 import { Header } from '../components/layout/Header'
 import { webhooksService } from '../services/webhooksService'
+import { chargesService } from '../services/chargesService'
+import { formatCurrency } from '../lib/formatters'
 import { useAuth } from '../contexts/AuthContext'
+import type { Charge } from '../types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -545,216 +545,413 @@ function SavedConnections({ onAdd }: { onAdd: () => void }) {
 
 // ─── Developer tab — simulador PIX ───────────────────────────────────────────
 
-interface SimFormState {
-  eventId: string
-  externalChargeId: string
-  referenceId: string
-  paidAmount: string
-  paidAt: string
-  provider: string
+function freshEventId() { return `evt_${Date.now()}` }
+
+// ─── Pré-condições e cenários ─────────────────────────────────────────────────
+
+type CheckResult =
+  | { state: 'ok' }
+  | { state: 'warn';    reason: string }
+  | { state: 'blocked'; reason: string }
+
+type Scenario = {
+  id: string
+  label: string
+  result: string
+  dot: string
+  needsCharge: boolean
+  check: (c: Charge | null) => CheckResult
+  build: (c: Charge) => { externalChargeId?: string; paidAmount: number; paidAt?: string }
 }
 
-function freshEventId() { return `evt_${Date.now()}` }
-function nowLocal() { return new Date().toISOString().slice(0, 16) }
+function isExpiredNow(c: Charge) { return new Date() > new Date(c.expiresAt) }
 
-const SIM_SCENARIOS = [
+const SCENARIOS: Scenario[] = [
   {
-    id: 'correct',
+    id: 'matched',
     label: 'Pagamento correto',
-    icon: <CheckCircle size={14} />,
-    color: 'text-green-400 border-green-500/30 bg-green-500/5 hover:bg-green-500/10',
-    description: 'Pagamento que deve conciliar com uma cobrança existente',
-    apply: (): Partial<SimFormState> => ({ externalChargeId: '', referenceId: '', paidAmount: '150.75', provider: 'FakePixProvider' }),
+    result: 'Matched',
+    dot: 'bg-green-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Paid' || c.status === 'Overpaid')
+        return { state: 'blocked', reason: 'Cobrança já liquidada — gerará Duplicado' }
+      if (c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança cancelada — motor rejeita pagamentos' }
+      if (isExpiredNow(c))
+        return { state: 'blocked', reason: 'Cobrança expirada — use o cenário "Expirada"' }
+      if (c.status === 'PendingReview')
+        return { state: 'warn', reason: 'Em revisão — o match atual será abandonado e substituído' }
+      if (c.status === 'PartiallyPaid')
+        return { state: 'warn', reason: 'Parcialmente paga — valor restante será liquidado' }
+      if (c.status === 'Divergent')
+        return { state: 'warn', reason: 'Marcada como divergente — pode aceitar o pagamento' }
+      return { state: 'ok' }
+    },
+    build: c => ({ externalChargeId: c.externalId, paidAmount: c.amount }),
+  },
+  {
+    id: 'partial',
+    label: 'Pagamento parcial',
+    result: 'PartialPayment',
+    dot: 'bg-sky-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Paid' || c.status === 'Overpaid')
+        return { state: 'blocked', reason: 'Cobrança já liquidada — gerará Duplicado' }
+      if (c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança cancelada — motor rejeita pagamentos' }
+      if (isExpiredNow(c))
+        return { state: 'blocked', reason: 'Cobrança expirada — motor gerará ExpiredChargePaid' }
+      if (c.status === 'PartiallyPaid')
+        return { state: 'warn', reason: 'Já tem parcial — a soma dos pagamentos pode liquidar a cobrança' }
+      if (c.status === 'PendingReview')
+        return { state: 'blocked', reason: 'Em revisão — confirme ou rejeite antes de enviar outro pagamento' }
+      return { state: 'ok' }
+    },
+    build: c => ({ externalChargeId: c.externalId, paidAmount: parseFloat((c.amount / 2).toFixed(2)) }),
+  },
+  {
+    id: 'exceeds',
+    label: 'Excede o valor',
+    result: 'PaymentExceedsExpected',
+    dot: 'bg-rose-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Paid' || c.status === 'Overpaid')
+        return { state: 'blocked', reason: 'Cobrança já liquidada — gerará Duplicado' }
+      if (c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança cancelada — motor rejeita pagamentos' }
+      if (isExpiredNow(c))
+        return { state: 'blocked', reason: 'Cobrança expirada — motor gerará ExpiredChargePaid' }
+      if (c.status === 'PartiallyPaid')
+        return { state: 'warn', reason: 'Parcialmente paga — depende do saldo restante, pode gerar Overpaid' }
+      if (c.status === 'PendingReview')
+        return { state: 'blocked', reason: 'Em revisão — resolva o review pendente primeiro' }
+      return { state: 'ok' }
+    },
+    build: c => ({ externalChargeId: c.externalId, paidAmount: parseFloat((c.amount + 50).toFixed(2)) }),
   },
   {
     id: 'mismatch',
     label: 'Valor divergente',
-    icon: <AlertTriangle size={14} />,
-    color: 'text-orange-400 border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10',
-    description: 'Valor diferente do esperado — gera AmountMismatch',
-    apply: (): Partial<SimFormState> => ({ externalChargeId: '', referenceId: '', paidAmount: '99.00', provider: 'FakePixProvider' }),
-  },
-  {
-    id: 'nocharge',
-    label: 'Sem cobrança',
-    icon: <XCircle size={14} />,
-    color: 'text-red-400 border-red-500/30 bg-red-500/5 hover:bg-red-500/10',
-    description: 'ExternalChargeId inválido — gera PaymentWithoutCharge',
-    apply: (): Partial<SimFormState> => ({ externalChargeId: `fakepsp_INVALID_${Date.now()}`, referenceId: '', paidAmount: '150.75', provider: 'FakePixProvider' }),
+    result: 'AmountMismatch',
+    dot: 'bg-orange-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Paid' || c.status === 'Overpaid')
+        return { state: 'blocked', reason: 'Cobrança já liquidada — gerará Duplicado' }
+      if (c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança cancelada' }
+      if (isExpiredNow(c))
+        return { state: 'blocked', reason: 'Cobrança expirada — gerará ExpiredChargePaid' }
+      // AmountMismatch depende de fuzzy sem ExternalId encontrar a cobrança
+      return {
+        state: 'warn',
+        reason: 'Usa fuzzy match (sem ID). Se outra cobrança tiver o mesmo valor, o motor pode conciliar lá em vez de aqui',
+      }
+    },
+    build: c => ({ paidAmount: parseFloat((c.amount + 0.01).toFixed(2)) }),
   },
   {
     id: 'duplicate',
-    label: 'Duplicado',
-    icon: <Copy size={14} />,
-    color: 'text-purple-400 border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10',
-    description: 'Mesmo EventId — gera IgnoredDuplicate',
-    apply: (current: SimFormState): Partial<SimFormState> => ({
-      eventId: current.eventId,
-      paidAmount: current.paidAmount || '150.75',
+    label: 'Pag. duplicado',
+    result: 'DuplicatePayment',
+    dot: 'bg-orange-400',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Pending')
+        return { state: 'blocked', reason: 'Cobrança ainda pendente — gerará Matched, não Duplicado. Pague primeiro com "Pagamento correto"' }
+      if (c.status === 'PartiallyPaid')
+        return { state: 'warn', reason: 'Parcialmente paga — gerará Duplicado se a soma total já cobrir o valor' }
+      if (c.status === 'PendingReview')
+        return { state: 'blocked', reason: 'Em revisão — resolva o review antes de simular duplicado' }
+      if (c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança cancelada' }
+      if (isExpiredNow(c) && c.status !== 'Paid')
+        return { state: 'warn', reason: 'Expirada e não paga — gerará ExpiredChargePaid' }
+      return { state: 'ok' }
+    },
+    build: c => ({ externalChargeId: c.externalId, paidAmount: c.amount }),
+  },
+  {
+    id: 'expired',
+    label: 'Cobrança expirada',
+    result: 'ExpiredChargePaid',
+    dot: 'bg-gray-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Paid' || c.status === 'Overpaid')
+        return { state: 'blocked', reason: 'Cobrança já liquidada — gerará Duplicado' }
+      if (c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança cancelada' }
+      if (!isExpiredNow(c))
+        return {
+          state: 'blocked',
+          reason: `Cobrança ainda válida até ${new Date(c.expiresAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} — o motor checa o tempo real, não o paidAt`,
+        }
+      return { state: 'ok' }
+    },
+    build: c => ({
+      externalChargeId: c.externalId,
+      paidAmount: c.amount,
+      paidAt: new Date(new Date(c.expiresAt).getTime() + 86_400_000).toISOString(),
     }),
+  },
+  {
+    id: 'invalid-ref',
+    label: 'Referência inválida',
+    result: 'InvalidReference',
+    dot: 'bg-purple-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      return { state: 'ok' }
+    },
+    build: c => ({ externalChargeId: `INVALID_${c.externalId.slice(0, 8)}`, paidAmount: c.amount }),
+  },
+  {
+    id: 'no-charge',
+    label: 'Pag. sem cobrança',
+    result: 'PaymentWithoutCharge',
+    dot: 'bg-amber-500',
+    needsCharge: false,
+    check: _c => ({ state: 'ok' }),
+    build: _c => ({ externalChargeId: `GHOST_${Date.now()}`, paidAmount: 1.00 }),
+  },
+  {
+    id: 'multiple',
+    label: 'Múltiplos candidatos',
+    result: 'MultipleMatchCandidates',
+    dot: 'bg-indigo-500',
+    needsCharge: true,
+    check: c => {
+      if (!c) return { state: 'blocked', reason: 'Selecione uma cobrança' }
+      if (c.status === 'Paid' || c.status === 'Overpaid' || c.status === 'Cancelled')
+        return { state: 'blocked', reason: 'Cobrança não está disponível para fuzzy match' }
+      if (isExpiredNow(c))
+        return { state: 'blocked', reason: 'Expirada — gerará ExpiredChargePaid' }
+      return {
+        state: 'warn',
+        reason: 'Requer ≥ 2 cobranças pendentes com exatamente o mesmo valor no sistema',
+      }
+    },
+    build: c => ({ paidAmount: c.amount }),
   },
 ]
 
+const STATUS_LABEL: Record<string, string> = {
+  Pending:       'Pendente',
+  PendingReview: 'Em revisão',
+  PartiallyPaid: 'Parcial',
+  Paid:          'Pago',
+  Expired:       'Expirada',
+  Divergent:     'Divergente',
+  Overpaid:      'Excedente',
+  Cancelled:     'Cancelada',
+}
+
 function DevTab() {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<SimFormState>({
-    eventId: freshEventId(),
-    externalChargeId: '',
-    referenceId: '',
-    paidAmount: '',
-    paidAt: nowLocal(),
-    provider: 'FakePixProvider',
-  })
-  const [result, setResult] = useState<{ status: string; eventId: string } | null>(null)
+  const [selected, setSelected] = useState<Charge | null>(null)
+  const [lastResult, setLastResult] = useState<{ scenarioId: string; status: string } | null>(null)
+  const [search, setSearch] = useState('')
 
-  const { mutate, isPending, error } = useMutation({
-    mutationFn: () =>
-      webhooksService.sendPixWebhook({
-        eventId:          form.eventId,
-        externalChargeId: form.externalChargeId || undefined,
-        referenceId:      form.referenceId      || undefined,
-        paidAmount:       parseFloat(form.paidAmount),
-        paidAt:           new Date(form.paidAt).toISOString(),
-        provider:         form.provider,
-      }),
-    onSuccess: (res) => {
+  const { data: chargesData, isLoading } = useQuery({
+    queryKey: ['dev-charges'],
+    queryFn: () => chargesService.list({ pageSize: 50 }),
+    staleTime: 30_000,
+  })
+
+  const { mutate, isPending, variables: pendingScenarioId } = useMutation({
+    mutationFn: ({ scenario, charge }: { scenario: Scenario; charge: Charge }) => {
+      const payload = scenario.build(charge)
+      return webhooksService.sendPixWebhook({
+        eventId:          freshEventId(),
+        externalChargeId: payload.externalChargeId,
+        paidAmount:       payload.paidAmount,
+        paidAt:           payload.paidAt ?? new Date().toISOString(),
+        provider:         'FakePixProvider',
+      })
+    },
+    onSuccess: (_res, { scenario }) => {
       queryClient.invalidateQueries({ queryKey: ['payment-events'] })
       queryClient.invalidateQueries({ queryKey: ['charges'] })
+      queryClient.invalidateQueries({ queryKey: ['dev-charges'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
-      setResult({ status: res.status, eventId: res.eventId })
+      setLastResult({ scenarioId: scenario.id, status: 'ok' })
+    },
+    onError: (_err, { scenario }) => {
+      setLastResult({ scenarioId: scenario.id, status: 'error' })
     },
   })
 
-  function set(field: keyof SimFormState, value: string) {
-    setForm(f => ({ ...f, [field]: value }))
-    setResult(null)
-  }
+  const charges = (chargesData?.items ?? []).filter(c =>
+    !search.trim() ||
+    c.referenceId.toLowerCase().includes(search.toLowerCase()) ||
+    c.externalId?.toLowerCase().includes(search.toLowerCase())
+  )
 
-  function applyScenario(s: typeof SIM_SCENARIOS[number]) {
-    const patch = s.apply(form)
-    setForm(f => ({ ...f, ...patch, eventId: patch.eventId ?? freshEventId(), paidAt: nowLocal() }))
-    setResult(null)
-  }
+  function fire(scenario: Scenario) {
+    const chk = scenario.check(selected)
+    if (chk.state === 'blocked') return
 
-  const isValid =
-    form.eventId.trim() !== '' &&
-    !isNaN(parseFloat(form.paidAmount)) &&
-    parseFloat(form.paidAmount) > 0
+    const charge: Charge = selected ?? {
+      id: '', referenceId: '', externalId: `ghost_${Date.now()}`,
+      amount: 1, status: 'Pending',
+      expiresAt: new Date().toISOString(), createdAt: new Date().toISOString(),
+      updatedAt: null, pixCopiaECola: null,
+    }
+    setLastResult(null)
+    mutate({ scenario, charge })
+  }
 
   return (
-    <div className="space-y-5">
-      {/* Banner de contexto */}
-      <div className="flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3.5">
-        <FlaskConical size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-semibold text-amber-300">Ambiente de desenvolvimento</p>
-          <p className="text-xs text-amber-500/80 mt-0.5 leading-relaxed">
-            Os webhooks enviados aqui chegam ao motor real de conciliação e geram resultados visíveis em{' '}
-            <span className="text-amber-300 font-medium">Conciliações</span> e{' '}
-            <span className="text-amber-300 font-medium">Eventos de Pagamento</span>.
-            Use para testar cenários antes de conectar um provedor real.
+    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5">
+
+      {/* Coluna esquerda: lista de cobranças */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-800">
+          <p className="text-xs font-semibold text-gray-300 mb-2">
+            1. Selecione uma cobrança
           </p>
+          <div className="relative">
+            <input
+              type="search"
+              placeholder="Buscar referência…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-3 pr-3 py-1.5 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
+            />
+          </div>
         </div>
-      </div>
 
-      {/* Cenários pré-configurados */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-        <h3 className="text-sm font-semibold text-gray-200 mb-1">Cenários pré-configurados</h3>
-        <p className="text-xs text-gray-500 mb-4">Clique para preencher o formulário com dados de teste.</p>
-        <div className="grid grid-cols-2 gap-2">
-          {SIM_SCENARIOS.map(s => (
-            <button key={s.id} onClick={() => applyScenario(s)}
-              className={`flex items-start gap-2.5 px-3 py-3 text-sm font-medium rounded-xl border transition-colors text-left ${s.color}`}>
-              <span className="mt-0.5 flex-shrink-0">{s.icon}</span>
-              <div>
-                <p className="font-semibold leading-tight">{s.label}</p>
-                <p className="text-[11px] opacity-70 mt-0.5 leading-tight font-normal">{s.description}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Formulário */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-        <h3 className="text-sm font-semibold text-gray-200 mb-5">Enviar webhook PIX</h3>
-        <form
-          onSubmit={e => { e.preventDefault(); setResult(null); mutate() }}
-          className="space-y-4 max-w-lg"
-        >
-          {error && (
-            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
-              {(error as Error).message}
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-800/60" style={{ maxHeight: 420 }}>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 size={18} className="text-gray-600 animate-spin" />
             </div>
+          ) : charges.length === 0 ? (
+            <div className="py-10 text-center">
+              <p className="text-xs text-gray-600">Nenhuma cobrança encontrada.</p>
+              <Link to="/charges" className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 inline-block">Criar cobrança</Link>
+            </div>
+          ) : (
+            charges.map(c => {
+              const isSelected = selected?.id === c.id
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => { setSelected(c); setLastResult(null) }}
+                  className={[
+                    'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                    isSelected
+                      ? 'bg-indigo-500/10 border-l-2 border-indigo-500'
+                      : 'hover:bg-gray-800/50 border-l-2 border-transparent',
+                  ].join(' ')}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-mono font-medium truncate ${isSelected ? 'text-indigo-300' : 'text-gray-300'}`}>
+                      {c.referenceId}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-gray-500">{formatCurrency(c.amount)}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                        c.status === 'Paid'     ? 'bg-green-500/15 text-green-400' :
+                        c.status === 'Expired'  ? 'bg-gray-500/15 text-gray-400' :
+                        c.status === 'Divergent'? 'bg-orange-500/15 text-orange-400' :
+                        'bg-amber-500/15 text-amber-400'
+                      }`}>
+                        {STATUS_LABEL[c.status] ?? c.status}
+                      </span>
+                    </div>
+                  </div>
+                  {isSelected && <CheckCircle size={13} className="text-indigo-400 flex-shrink-0" />}
+                </button>
+              )
+            })
           )}
-          {result && (
-            <div className={`rounded-lg p-3 text-sm border ${
-              result.status === 'Received'
+        </div>
+      </div>
+
+      {/* Coluna direita: cenários */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-300">2. Escolha o cenário</p>
+          {lastResult && (
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
+              lastResult.status === 'ok'
                 ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                : 'bg-purple-500/10 border-purple-500/20 text-purple-400'
+                : 'bg-red-500/10 border-red-500/20 text-red-400'
             }`}>
-              {result.status === 'Received'
-                ? '✓ Webhook enviado — aguardando processamento.'
-                : '⚠ Evento duplicado detectado (IgnoredDuplicate).'}
-              <p className="text-xs mt-0.5 opacity-70 font-mono">EventId: {result.eventId}</p>
-            </div>
+              {lastResult.status === 'ok' ? '✓ Webhook enviado' : '✕ Erro ao enviar'}
+            </span>
           )}
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">EventId</label>
-            <div className="flex gap-2">
-              <input type="text" value={form.eventId} onChange={e => set('eventId', e.target.value)}
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors" required />
-              <button type="button" onClick={() => set('eventId', freshEventId())} title="Gerar novo EventId"
-                className="px-3 py-2.5 text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-800 hover:text-gray-200 transition-colors">
-                <RefreshCw size={14} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+          {SCENARIOS.map(s => {
+            const chk = s.check(selected)
+            const isBlocked = chk.state === 'blocked'
+            const isWarn    = chk.state === 'warn'
+            const isRunning = isPending && (pendingScenarioId as { scenario: Scenario } | undefined)?.scenario?.id === s.id
+            const wasLast   = lastResult?.scenarioId === s.id
+
+            return (
+              <button
+                key={s.id}
+                onClick={() => !isBlocked && fire(s)}
+                disabled={isBlocked || isPending}
+                title={chk.state !== 'ok' ? (chk as { reason: string }).reason : undefined}
+                className={[
+                  'group flex flex-col gap-1.5 px-4 py-3 rounded-xl border text-left transition-all',
+                  isBlocked
+                    ? 'border-gray-800/60 bg-gray-900/30 cursor-not-allowed opacity-50'
+                    : isWarn
+                      ? 'border-amber-500/20 bg-amber-500/[0.03] hover:border-amber-500/35 hover:bg-amber-500/[0.06]'
+                      : wasLast && lastResult?.status === 'ok'
+                        ? 'border-green-500/30 bg-green-500/5'
+                        : 'border-gray-800 bg-gray-900 hover:border-gray-600 hover:bg-gray-800/60',
+                ].join(' ')}
+              >
+                {/* Linha principal */}
+                <div className="flex items-center gap-2.5">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot} ${isBlocked ? 'opacity-30' : ''}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-semibold leading-tight ${isBlocked ? 'text-gray-500' : 'text-gray-200'}`}>
+                      {s.label}
+                    </p>
+                    <p className={`text-[10px] font-mono ${isBlocked ? 'text-gray-700' : 'text-gray-600'}`}>
+                      → {s.result}
+                    </p>
+                  </div>
+                  <span className="flex-shrink-0">
+                    {isRunning
+                      ? <Loader2 size={13} className="text-gray-400 animate-spin" />
+                      : wasLast && lastResult?.status === 'ok'
+                        ? <CheckCircle size={13} className="text-green-400" />
+                        : !isBlocked && <ChevronRight size={13} className="text-gray-700 group-hover:text-gray-400 transition-colors" />}
+                  </span>
+                </div>
+
+                {/* Motivo — warn ou blocked */}
+                {chk.state !== 'ok' && (
+                  <p className={`text-[10px] leading-snug pl-[18px] ${
+                    isBlocked ? 'text-red-400/70' : 'text-amber-500/80'
+                  }`}>
+                    {(chk as { reason: string }).reason}
+                  </p>
+                )}
               </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              ExternalChargeId <span className="text-gray-500 font-normal">(opcional)</span>
-            </label>
-            <input type="text" placeholder="fakepsp_abc123..." value={form.externalChargeId}
-              onChange={e => set('externalChargeId', e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors placeholder-gray-500" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              ReferenceId <span className="text-gray-500 font-normal">(opcional)</span>
-            </label>
-            <input type="text" placeholder="RECIX-20260429-000001" value={form.referenceId}
-              onChange={e => set('referenceId', e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors placeholder-gray-500" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">Valor Pago (R$)</label>
-            <input type="number" step="0.01" min="0.01" placeholder="150.75" value={form.paidAmount}
-              onChange={e => set('paidAmount', e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors placeholder-gray-500" required />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">Data/Hora do Pagamento</label>
-            <input type="datetime-local" value={form.paidAt} onChange={e => set('paidAt', e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">Provider</label>
-            <input type="text" value={form.provider} onChange={e => set('provider', e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg text-gray-100 px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-colors" />
-          </div>
-
-          <button type="submit" disabled={isPending || !isValid}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-            {isPending && <Loader2 size={14} className="animate-spin" />}
-            {isPending ? 'Enviando…' : 'Enviar webhook'}
-          </button>
-        </form>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

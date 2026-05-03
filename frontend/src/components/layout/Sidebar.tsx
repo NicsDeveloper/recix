@@ -1,13 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { ComponentType } from 'react'
 import {
   LayoutDashboard,
   CreditCard,
   Zap,
   GitMerge,
-  PlayCircle,
   FileText,
   Bell,
   Wifi,
@@ -54,14 +53,6 @@ const navItems: NavItem[] = [
     to: '/reconciliations',
     title: 'Auditoria: extrato vs esperado, divergências e a verdade financeira após o recebimento.',
   },
-  {
-    kind: 'link',
-    label: 'Simulador PIX',
-    icon: PlayCircle,
-    to: '/connections?tab=dev',
-    badge: 'Novo',
-    adminOnly: true,
-  },
   { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
   { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
   { kind: 'link', label: 'Conexões',        icon: Plug,   to: '/connections' },
@@ -75,29 +66,10 @@ const navItems: NavItem[] = [
   { kind: 'link', label: 'Configurações', icon: Settings, to: '/settings' },
 ]
 
-const SEEN_BADGES_KEY = 'recix_seen_badges'
-
-function useSeenBadge(badgeId: string): [boolean, () => void] {
-  const stored = () => {
-    try { return JSON.parse(localStorage.getItem(SEEN_BADGES_KEY) ?? '[]') as string[] }
-    catch { return [] }
-  }
-  const [seen, setSeen] = useState(() => stored().includes(badgeId))
-
-  function markSeen() {
-    if (seen) return
-    const list = stored()
-    if (!list.includes(badgeId)) localStorage.setItem(SEEN_BADGES_KEY, JSON.stringify([...list, badgeId]))
-    setSeen(true)
-  }
-
-  return [seen, markSeen]
-}
 
 export function Sidebar() {
   const { currentOrg } = useAuth()
   const location = useLocation()
-  const [simulatorBadgeSeen, markSimulatorBadgeSeen] = useSeenBadge('simulador-pix')
 
   // Badge de solicitações pendentes — só para Owner/Admin
   const isAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
@@ -154,14 +126,13 @@ export function Sidebar() {
 
           const Icon = item.icon
           const linkTitle = item.kind === 'link' ? item.title : undefined
-          const showBadge = item.badge && !(item.badge === 'Novo' && item.to === '/webhooks/simulator' && simulatorBadgeSeen)
+          const showBadge = !!item.badge
           return (
             <NavLink
               key={item.to}
               to={item.to}
               title={linkTitle}
               end={item.end ?? item.to === '/'}
-              onClick={() => { if (item.badge === 'Novo' && item.to === '/webhooks/simulator') markSimulatorBadgeSeen() }}
               className={({ isActive }) => {
                 const isDivergenciasNav = item.to.includes('filter=divergent')
                 const hasDivergentFilter = new URLSearchParams(location.search).get('filter') === 'divergent'
