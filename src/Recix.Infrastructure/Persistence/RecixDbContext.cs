@@ -11,6 +11,7 @@ public sealed class RecixDbContext : DbContext
     public DbSet<Charge> Charges => Set<Charge>();
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<ReconciliationResult> ReconciliationResults => Set<ReconciliationResult>();
+    public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
     public DbSet<User>                      Users                    => Set<User>();
     public DbSet<Organization>              Organizations            => Set<Organization>();
     public DbSet<OrganizationMember>        OrganizationMembers      => Set<OrganizationMember>();
@@ -22,6 +23,7 @@ public sealed class RecixDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ChargeConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentEventConfiguration());
         modelBuilder.ApplyConfiguration(new ReconciliationResultConfiguration());
+        modelBuilder.ApplyConfiguration(new PaymentAllocationConfiguration());
         modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new OrganizationConfiguration());
         modelBuilder.ApplyConfiguration(new OrganizationMemberConfiguration());

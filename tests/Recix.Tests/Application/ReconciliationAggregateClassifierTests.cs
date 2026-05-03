@@ -23,6 +23,19 @@ public sealed class ReconciliationAggregateClassifierTests
         var label = ReconciliationAggregateClassifier.Classify(500, rows);
         Assert.Equal("Conciliado", label);
         Assert.Equal(500, ReconciliationAggregateClassifier.SumAllocatedTowardCharge(rows));
+        Assert.Equal(500, ReconciliationAggregateClassifier.SumAllocatedTowardCharge(rows, recognizedFromAllocations: 500));
+    }
+
+    [Fact]
+    public void Allocation_sum_takes_precedence_over_legacy_rows()
+    {
+        var org      = Guid.NewGuid();
+        var chargeId = Guid.NewGuid();
+        var pe       = Guid.NewGuid();
+        var r        = ReconciliationResult.Create(org, chargeId, pe, ReconciliationStatus.PartialPayment, "p1",
+            500, 250, ConfidenceLevel.High, MatchReason.ExactReferenceId, "ReferenceId");
+
+        Assert.Equal(400, ReconciliationAggregateClassifier.SumAllocatedTowardCharge([r], recognizedFromAllocations: 400));
     }
 
     [Fact]

@@ -512,18 +512,22 @@ public sealed class DashboardQueryService(
         if (chargeIds.Count == 0)
             return new Dictionary<Guid, string>();
 
-        var rows   = await reconciliations.ListByChargeIdsAsync(chargeIds, ct);
-        var groups = rows.GroupBy(r => r.ChargeId!.Value).ToDictionary(g => g.Key, g => (IReadOnlyList<Domain.Entities.ReconciliationResult>)g.ToList());
-        var map    = new Dictionary<Guid, string>();
+        var rows      = await reconciliations.ListByChargeIdsAsync(chargeIds, ct);
+        var allocSums = await reconciliations.SumRecognizedAllocationsByChargeIdsAsync(chargeIds, ct);
+        var groups    = rows.GroupBy(r => r.ChargeId!.Value).ToDictionary(g => g.Key, g => (IReadOnlyList<Domain.Entities.ReconciliationResult>)g.ToList());
+        var map       = new Dictionary<Guid, string>();
 
         foreach (var id in chargeIds)
         {
-            if (!groups.TryGetValue(id, out var list) || list.Count == 0)
+            groups.TryGetValue(id, out var list);
+            list ??= [];
+            if (list.Count == 0 && (!allocSums.TryGetValue(id, out var onlyAlloc) || onlyAlloc <= 0m))
                 continue;
 
             var charge   = await charges.GetByIdAsync(id, ct);
-            var expected = charge?.Amount ?? list[0].ExpectedAmount ?? 0;
-            map[id] = ReconciliationAggregateClassifier.Classify(expected, list);
+            var expected = charge?.Amount ?? list.FirstOrDefault()?.ExpectedAmount ?? 0;
+            var fromAlloc = allocSums.TryGetValue(id, out var sum) ? sum : 0m;
+            map[id] = ReconciliationAggregateClassifier.Classify(expected, list, fromAlloc);
         }
 
         return map;
@@ -559,13 +563,17 @@ public sealed class DashboardQueryService(
         var slice = groups.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var items = new List<ChargeReconciliationSummaryDto>();
 
+        var sliceChargeIds = slice.Select(x => x.Key).ToList();
+        var allocSumsPage  = await reconciliations.SumRecognizedAllocationsByChargeIdsAsync(sliceChargeIds, ct);
+
         foreach (var g in slice)
         {
             var list = g.OrderByDescending(x => x.CreatedAt).ToList();
             var charge   = await charges.GetByIdAsync(g.Key, ct);
             var expected = charge?.Amount ?? list[0].ExpectedAmount ?? 0;
-            var allocated = ReconciliationAggregateClassifier.SumAllocatedTowardCharge(list);
-            var status    = ReconciliationAggregateClassifier.Classify(expected, list);
+            var fromAlloc = allocSumsPage.TryGetValue(g.Key, out var s) ? s : 0m;
+            var allocated = ReconciliationAggregateClassifier.SumAllocatedTowardCharge(list, fromAlloc);
+            var status    = ReconciliationAggregateClassifier.Classify(expected, list, fromAlloc);
             var lines     = await EnrichReconciliationsAsync(list, ct);
             var refId     = charge?.ReferenceId ?? lines.FirstOrDefault()?.ChargeReferenceId ?? "";
 

@@ -7,7 +7,8 @@ namespace Recix.Tests.Application.Fakes;
 
 public sealed class FakeReconciliationRepository : IReconciliationRepository
 {
-    private readonly List<ReconciliationResult> _store = [];
+    private readonly List<ReconciliationResult> _store       = [];
+    private readonly List<PaymentAllocation>    _allocations = [];
 
     public Task<ReconciliationResult?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult(_store.FirstOrDefault(r => r.Id == id));
@@ -89,6 +90,14 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
 
     public Task<decimal> SumAllocatedTowardChargeAsync(Guid chargeId, CancellationToken ct = default)
     {
+        var fromAlloc = _allocations
+            .Where(a => a.ChargeId == chargeId
+                        && a.VoidedAt == null
+                        && a.Recognition == AllocationRecognition.Recognized)
+            .Sum(a => a.Amount);
+        if (fromAlloc > 0m)
+            return Task.FromResult(fromAlloc);
+
         static bool Counts(ReconciliationResult r)
         {
             if (r.PaymentEventId == Guid.Empty)
@@ -108,6 +117,26 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
         return Task.FromResult(sum);
     }
 
+    public Task AddPaymentAllocationAsync(PaymentAllocation allocation, CancellationToken ct = default)
+    {
+        _allocations.Add(allocation);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyDictionary<Guid, decimal>> SumRecognizedAllocationsByChargeIdsAsync(
+        IReadOnlyList<Guid> chargeIds,
+        CancellationToken ct = default)
+    {
+        var dict = chargeIds.Distinct().ToDictionary(id => id, _ => 0m);
+        foreach (var a in _allocations.Where(x => x.VoidedAt == null && x.Recognition == AllocationRecognition.Recognized))
+        {
+            if (dict.ContainsKey(a.ChargeId))
+                dict[a.ChargeId] += a.Amount;
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<Guid, decimal>>(dict);
+    }
+
     public Task AbandonPendingReviewForChargeAsync(Guid chargeId, CancellationToken ct = default)
     {
         foreach (var r in _store.Where(r =>
@@ -118,4 +147,6 @@ public sealed class FakeReconciliationRepository : IReconciliationRepository
     }
 
     public IReadOnlyList<ReconciliationResult> All => _store;
+
+    public IReadOnlyList<PaymentAllocation> AllAllocations => _allocations;
 }

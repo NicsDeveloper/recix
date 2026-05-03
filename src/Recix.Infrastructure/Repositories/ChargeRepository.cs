@@ -72,8 +72,10 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
         decimal amount, Guid organizationId, CancellationToken ct = default) =>
         db.Charges
           .Where(c => c.OrganizationId == organizationId
-                   && c.Status        == ChargeStatus.Pending
-                   && c.Amount        == amount)
+                   && (c.Status == ChargeStatus.Pending
+                       || c.Status == ChargeStatus.PartiallyPaid
+                       || c.Status == ChargeStatus.Divergent)
+                   && c.Amount == amount)
           .OrderBy(c => c.CreatedAt)
           .ToListAsync(ct);
 
@@ -85,10 +87,12 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
         CancellationToken ct = default) =>
         db.Charges
           .Where(c => c.OrganizationId == organizationId
-                   && c.Status        == ChargeStatus.Pending
-                   && c.Amount        == amount
-                   && c.CreatedAt     >= from
-                   && c.CreatedAt     <= to)
+                   && (c.Status == ChargeStatus.Pending
+                       || c.Status == ChargeStatus.PartiallyPaid
+                       || c.Status == ChargeStatus.Divergent)
+                   && c.Amount == amount
+                   && c.CreatedAt >= from
+                   && c.CreatedAt <= to)
           .OrderBy(c => c.CreatedAt)
           .ToListAsync(ct);
 

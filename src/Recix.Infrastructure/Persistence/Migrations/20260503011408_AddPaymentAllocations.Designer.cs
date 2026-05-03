@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Recix.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Recix.Infrastructure.Persistence;
 namespace Recix.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(RecixDbContext))]
-    partial class RecixDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260503011408_AddPaymentAllocations")]
+    partial class AddPaymentAllocations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

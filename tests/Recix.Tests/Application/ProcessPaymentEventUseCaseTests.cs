@@ -17,6 +17,7 @@ public sealed class ProcessPaymentEventUseCaseTests
     private ProcessPaymentEventUseCase BuildUseCase() =>
         new(_events, _charges, _reconciliations,
             new ReconciliationEngine(_charges, _reconciliations),
+            new ChargeBalanceApplier(_charges, _reconciliations),
             _metrics,
             new FakeEventBroadcaster(),
             new FakeAlertNotifier(),
@@ -143,13 +144,27 @@ public sealed class ProcessPaymentEventUseCaseTests
         _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.DuplicatePayment);
     }
 
+    [Fact]
+    public async Task Process_ExternalIdMiss_falls_back_to_ReferenceId_when_org_present()
+    {
+        var charge = Charge.Create(TestOrgId, "REF-FALLBACK", "ext-real", 100m, DateTime.UtcNow.AddHours(1));
+        await _charges.AddAsync(charge);
+        var evt = PaymentEvent.Create(TestOrgId, "evt_fb", "wrong-ext", "REF-FALLBACK", 100m, DateTime.UtcNow, "FakeProvider", "{}");
+        await _events.AddAsync(evt);
+
+        await BuildUseCase().ExecuteAsync(evt.Id);
+
+        charge.Status.Should().Be(ChargeStatus.Paid);
+        _reconciliations.All[0].Status.Should().Be(ReconciliationStatus.Matched);
+    }
+
     // --- Cenário 4a: InvalidReference (ExternalChargeId fornecido mas não encontrado) ---
 
     [Fact]
     public async Task Process_WithUnknownExternalChargeId_ResultIsInvalidReference()
     {
-        // ExternalChargeId fornecido → engine não faz fallback para fuzzy; retorna InvalidReference.
-        var evt = PaymentEvent.Create(TestOrgId, "evt_001", "nonexistent-ext", null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
+        // Sem organização não há fuzzy: identificador externo inválido permanece InvalidReference.
+        var evt = PaymentEvent.Create(Guid.Empty, "evt_001", "nonexistent-ext", null, 100m, DateTime.UtcNow, "FakeProvider", "{}");
         await _events.AddAsync(evt);
 
         await BuildUseCase().ExecuteAsync(evt.Id);

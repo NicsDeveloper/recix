@@ -20,7 +20,7 @@ namespace Recix.Application.UseCases;
 ///   descricao*   — descrição da venda (ex: Amortecedor dianteiro)
 ///   data         — data/hora da venda ISO ou dd/MM/yyyy HH:mm (default: agora)
 ///
-/// A cobrança criada expira em 48h a partir da data da venda (nunca no passado).
+/// A cobrança expira em 48h após a data da venda (SLA), nunca antes de ~1 minuto no futuro (requisito do domínio).
 /// Após importar, re-concilia payment events órfãos (PaymentWithoutCharge).
 /// </summary>
 public sealed class ImportSalesUseCase(
@@ -119,8 +119,13 @@ public sealed class ImportSalesUseCase(
                 saleDate = DateTime.UtcNow;
             }
 
-            // ExpiresAt = 48h a partir de agora (nunca no passado — requisito do domain)
-            var expiresAt   = DateTime.UtcNow.AddHours(48);
+            const int importPaymentSlaHours = 48;
+            var saleUtc     = saleDate.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(saleDate, DateTimeKind.Utc)
+                : saleDate.ToUniversalTime();
+            var expiresFromSale = saleUtc.AddHours(importPaymentSlaHours);
+            var minFuture       = DateTime.UtcNow.AddMinutes(1);
+            var expiresAt       = expiresFromSale > minFuture ? expiresFromSale : minFuture;
             var referenceId = await GenerateReferenceIdAsync(ct);
 
             // Usa a coluna reference como ExternalId para permitir cruzamento com extrato bancário

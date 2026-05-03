@@ -36,6 +36,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IAiInsightService, FakeAiInsightService>();
 
         services.AddScoped<ReconciliationEngine>();
+        services.AddScoped<ChargeBalanceApplier>();
         services.AddScoped<CreateChargeUseCase>();
         services.AddScoped<CancelChargeUseCase>();
         services.AddScoped<ReceivePixWebhookUseCase>();

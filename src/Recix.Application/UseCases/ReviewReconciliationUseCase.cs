@@ -1,4 +1,6 @@
 using Recix.Application.Interfaces;
+using Recix.Application.Services;
+using Recix.Domain.Entities;
 using Recix.Domain.Enums;
 
 namespace Recix.Application.UseCases;
@@ -16,6 +18,7 @@ public sealed class ReviewReconciliationUseCase(
     IReconciliationRepository reconciliations,
     IChargeRepository charges,
     IPaymentEventRepository paymentEvents,
+    ChargeBalanceApplier chargeBalanceApplier,
     IEventBroadcaster broadcaster)
 {
     public async Task ConfirmAsync(Guid resultId, Guid reviewerUserId, Guid orgId, CancellationToken ct = default)
@@ -33,16 +36,13 @@ public sealed class ReviewReconciliationUseCase(
         result.Confirm(reviewerUserId);
         await reconciliations.UpdateAsync(result, ct);
 
-        // Confirma a cobrança → PendingReview → Paid
-        if (result.ChargeId.HasValue)
+        if (result.ChargeId is { } cid && result.PaymentEventId != Guid.Empty)
         {
-            var charge = await charges.GetByIdAsync(result.ChargeId.Value, ct);
-            if (charge is not null)
-            {
-                charge.MarkAsPaid();
-                await charges.UpdateAsync(charge, ct);
-                broadcaster.Publish(RecixEvent.ChargeUpdated(charge.Id, orgId));
-            }
+            await reconciliations.AddPaymentAllocationAsync(
+                PaymentAllocation.CreateRecognized(result.OrganizationId, cid, result.PaymentEventId, result.PaidAmount),
+                ct);
+            await chargeBalanceApplier.RecalculateAsync(cid, ct);
+            broadcaster.Publish(RecixEvent.ChargeUpdated(cid, orgId));
         }
 
         broadcaster.Publish(RecixEvent.ReconciliationCreated(result.Id, orgId));

@@ -27,13 +27,14 @@ public interface IChargeRepository
     Task<List<Charge>> GetExpiredPendingAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retorna cobranças Pending ou PendingReview com o valor exato — FIFO sem filtro de data.
-    /// Fallback de último recurso no matching.
+    /// Retorna cobranças com o valor exato em estados que ainda podem receber pagamento
+    /// (<see cref="ChargeStatus.Pending"/>, <see cref="ChargeStatus.PartiallyPaid"/>, <see cref="ChargeStatus.Divergent"/>)
+    /// — FIFO sem filtro de data. Fallback de último recurso no matching.
     /// </summary>
     Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retorna cobranças Pending com o valor exato cujo CreatedAt está dentro da janela [from, to].
+    /// Retorna cobranças em estados recebíveis com o valor exato cujo CreatedAt está dentro da janela [from, to].
     /// Preferível ao FIFO puro — maior precisão sem requerer identificador.
     /// </summary>
     Task<List<Charge>> FindPendingByAmountAndDateRangeAsync(

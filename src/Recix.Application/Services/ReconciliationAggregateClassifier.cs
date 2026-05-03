@@ -21,9 +21,16 @@ public static class ReconciliationAggregateClassifier
         ReconciliationStatus.MultipleMatchCandidates,
     ];
 
-    /// <summary>Alinha com a soma usada pelo motor ao aplicar novos pagamentos (Matched, Partial, mismatch parcial, etc.).</summary>
-    public static decimal SumAllocatedTowardCharge(IEnumerable<ReconciliationResult> rows)
+    /// <summary>
+    /// Preferência: soma vinda de alocações reconhecidas. Se zero, usa a regra legada sobre resultados.
+    /// </summary>
+    public static decimal SumAllocatedTowardCharge(
+        IEnumerable<ReconciliationResult> rows,
+        decimal recognizedFromAllocations = 0)
     {
+        if (recognizedFromAllocations > 0m)
+            return recognizedFromAllocations;
+
         return rows
             .Where(r => r.PaymentEventId != Guid.Empty)
             .Where(r =>
@@ -39,9 +46,12 @@ public static class ReconciliationAggregateClassifier
     /// <summary>
     /// Rótulo estável para API/UI. <paramref name="expectedAmount"/> vem da cobrança.
     /// </summary>
-    public static string Classify(decimal expectedAmount, IReadOnlyList<ReconciliationResult> rows)
+    public static string Classify(
+        decimal expectedAmount,
+        IReadOnlyList<ReconciliationResult> rows,
+        decimal recognizedFromAllocations = 0)
     {
-        if (rows.Count == 0)
+        if (rows.Count == 0 && recognizedFromAllocations <= 0m)
             return "SemAlocacao";
 
         if (rows.Any(r => r.RequiresReview && r.ReviewDecision is null))
@@ -50,7 +60,7 @@ public static class ReconciliationAggregateClassifier
         if (rows.Any(r => HardDivergentStatuses.Contains(r.Status)))
             return "Divergente";
 
-        var allocated = SumAllocatedTowardCharge(rows);
+        var allocated = SumAllocatedTowardCharge(rows, recognizedFromAllocations);
 
         if (allocated <= 0)
             return "SemAlocacao";

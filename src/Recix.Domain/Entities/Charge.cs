@@ -100,11 +100,78 @@ public sealed class Charge
     /// <summary>A soma dos pagamentos vinculados superou o valor esperado da cobrança.</summary>
     public void MarkAsOverpaid()
     {
-        if (Status is not (ChargeStatus.Pending or ChargeStatus.PartiallyPaid))
+        if (Status is not (
+                ChargeStatus.Pending
+                or ChargeStatus.PartiallyPaid
+                or ChargeStatus.Divergent
+                or ChargeStatus.PendingReview))
             throw new DomainException($"Cannot mark a {Status} charge as Overpaid.");
 
         Status    = ChargeStatus.Overpaid;
         UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Alinha o status operacional ao total já reconhecido em alocações (após persistir <see cref="PaymentAllocation"/>).
+    /// Não altera <see cref="Cancelled"/> nem regressa estados terminais sem transição de domínio explícita.
+    /// </summary>
+    public void SyncOperationalStatusFromRecognizedTotal(decimal recognizedTotal)
+    {
+        if (Status == ChargeStatus.Cancelled)
+            return;
+
+        if (Status == ChargeStatus.Overpaid)
+            return;
+
+        if (Amount <= 0)
+            return;
+
+        if (Status == ChargeStatus.Expired && recognizedTotal > 0m)
+            MarkAsDivergent();
+
+        if (Status == ChargeStatus.PendingReview)
+        {
+            if (recognizedTotal >= Amount)
+            {
+                if (recognizedTotal > Amount)
+                    MarkAsOverpaid();
+                else
+                    MarkAsPaid();
+            }
+
+            return;
+        }
+
+        if (recognizedTotal <= 0m)
+            return;
+
+        var target = ResolveTargetStatus(recognizedTotal);
+        if (Status == target)
+            return;
+
+        switch (target)
+        {
+            case ChargeStatus.PartiallyPaid:
+                MarkAsPartiallyPaid();
+                break;
+            case ChargeStatus.Paid:
+                MarkAsPaid();
+                break;
+            case ChargeStatus.Overpaid:
+                MarkAsOverpaid();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private ChargeStatus ResolveTargetStatus(decimal recognizedTotal)
+    {
+        if (recognizedTotal < Amount)
+            return ChargeStatus.PartiallyPaid;
+        if (recognizedTotal == Amount)
+            return ChargeStatus.Paid;
+        return ChargeStatus.Overpaid;
     }
 
     public void MarkAsExpired()

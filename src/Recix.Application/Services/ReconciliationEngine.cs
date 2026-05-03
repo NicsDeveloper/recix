@@ -4,7 +4,16 @@ using Recix.Domain.Enums;
 
 namespace Recix.Application.Services;
 
-public sealed record ReconciliationOutcome(ReconciliationResult Result, Charge? Charge);
+public sealed record PaymentAllocationInstruction(
+    Guid ChargeId,
+    Guid PaymentEventId,
+    decimal Amount,
+    AllocationRecognition Recognition);
+
+public sealed record ReconciliationOutcome(
+    ReconciliationResult Result,
+    Charge? Charge,
+    PaymentAllocationInstruction? Allocation);
 
 /// <summary>
 /// Estratégia de matching (em ordem decrescente de confiança):
@@ -13,9 +22,15 @@ public sealed record ReconciliationOutcome(ReconciliationResult Result, Charge? 
 ///   3. Valor + janela ±48h, 1 candidato → MEDIUM confidence (RequiresReview)
 ///   4. Valor + FIFO, 1 candidato        → LOW confidence   (RequiresReview)
 ///   Múltiplos candidatos em 3 ou 4      → MultipleMatchCandidates (RequiresReview)
-///   ReferenceId informado mas não existe → InvalidReference (sem fallback)
 ///
-/// Com identificador exato, o valor é resolvido por saldo: soma dos pagamentos já alocados
+/// Se <see cref="PaymentEvent.ExternalChargeId"/> não encontrar cobrança, tenta
+/// <see cref="PaymentEvent.ReferenceId"/> e depois fuzzy (quando há OrganizationId).
+/// Sem organização, identificadores informados e não encontrados retornam InvalidReference.
+///
+/// Cobrança em PendingReview é liberada (abandona revisão + volta a Pending) e o fluxo continua —
+/// não bloqueia novos matches nem trata como duplicado por estar em revisão.
+///
+/// Com identificador exato, o valor é resolvido por saldo: soma dos valores já alocados
 /// vs valor esperado da cobrança (pagamento parcial, conciliação cumulativa, excedente).
 /// </summary>
 public sealed class ReconciliationEngine
@@ -43,29 +58,30 @@ public sealed class ReconciliationEngine
 
     private async Task<MatchResult> FindMatchAsync(PaymentEvent evt, CancellationToken ct)
     {
-        // 1. ExternalChargeId — se informado, tenta; não faz fallback se não achar
         if (!string.IsNullOrWhiteSpace(evt.ExternalChargeId))
         {
-            var c = await _charges.GetByExternalIdAsync(evt.ExternalChargeId, ct);
-            return c is not null
-                ? MatchResult.Found(c, ConfidenceLevel.High, MatchReason.ExactExternalChargeId, "ExternalChargeId")
-                : MatchResult.NotFound(MatchReason.InvalidReference);
+            var byExt = await _charges.GetByExternalIdAsync(evt.ExternalChargeId, ct);
+            if (byExt is not null)
+                return MatchResult.Found(byExt, ConfidenceLevel.High, MatchReason.ExactExternalChargeId, "ExternalChargeId");
         }
 
-        // 2. ReferenceId — se informado, tenta; não faz fallback se não achar
         if (!string.IsNullOrWhiteSpace(evt.ReferenceId))
         {
-            var c = await _charges.GetByReferenceIdAsync(evt.ReferenceId, ct);
-            return c is not null
-                ? MatchResult.Found(c, ConfidenceLevel.High, MatchReason.ExactReferenceId, "ReferenceId")
-                : MatchResult.NotFound(MatchReason.InvalidReference);
+            var byRef = await _charges.GetByReferenceIdAsync(evt.ReferenceId, ct);
+            if (byRef is not null)
+                return MatchResult.Found(byRef, ConfidenceLevel.High, MatchReason.ExactReferenceId, "ReferenceId");
         }
 
-        // Sem identificador — só tenta fuzzy se há contexto de organização
         if (evt.OrganizationId == Guid.Empty)
-            return MatchResult.NotFound(MatchReason.NoMatch);
+        {
+            if (!string.IsNullOrWhiteSpace(evt.ExternalChargeId))
+                return MatchResult.NotFound(MatchReason.InvalidReference);
+            if (!string.IsNullOrWhiteSpace(evt.ReferenceId))
+                return MatchResult.NotFound(MatchReason.InvalidReference);
 
-        // 3. Valor + janela temporal ±48h
+            return MatchResult.NotFound(MatchReason.NoMatch);
+        }
+
         var from   = evt.PaidAt - MatchWindow;
         var to     = evt.PaidAt + MatchWindow;
         var window = await _charges.FindPendingByAmountAndDateRangeAsync(
@@ -77,7 +93,6 @@ public sealed class ReconciliationEngine
         if (window.Count > 1)
             return MatchResult.Multiple(window, MatchReason.ValueWithinTimeWindow);
 
-        // 4. Valor + FIFO (sem janela)
         var fifo = await _charges.FindPendingByAmountAsync(evt.PaidAmount, evt.OrganizationId, ct);
 
         if (fifo.Count == 1)
@@ -98,7 +113,6 @@ public sealed class ReconciliationEngine
     {
         var orgId = evt.OrganizationId;
 
-        // ── Sem candidato ─────────────────────────────────────────────────────────
         if (match.Charge is null && match.Candidates.Count == 0)
         {
             var noMatchStatus = match.Reason == MatchReason.InvalidReference
@@ -112,10 +126,10 @@ public sealed class ReconciliationEngine
             return new ReconciliationOutcome(
                 ReconciliationResult.Create(orgId, null, evt.Id, noMatchStatus, noMatchReason,
                     null, evt.PaidAmount, ConfidenceLevel.High, match.Reason),
+                null,
                 null);
         }
 
-        // ── Múltiplos candidatos — requer escolha humana ──────────────────────────
         if (match.Candidates.Count > 1)
         {
             var candidateIds = string.Join(", ", match.Candidates.Take(5).Select(c => c.ReferenceId));
@@ -126,12 +140,18 @@ public sealed class ReconciliationEngine
                     $"Múltiplos candidatos ({match.Candidates.Count}) com valor R${evt.PaidAmount:F2}: {candidateIds}.",
                     null, evt.PaidAmount,
                     match.Confidence, match.Reason, match.MatchedField),
+                null,
                 null);
         }
 
         var charge = match.Charge!;
 
-        // ── Cobrança já liquidada (paga ou excedente consolidado) ──────────────────
+        if (charge.Status == ChargeStatus.PendingReview)
+        {
+            await _reconciliations.AbandonPendingReviewForChargeAsync(charge.Id, ct);
+            charge.RevertToPending();
+        }
+
         if (charge.Status is ChargeStatus.Paid or ChargeStatus.Overpaid)
         {
             return new ReconciliationOutcome(
@@ -141,29 +161,10 @@ public sealed class ReconciliationEngine
                     "Cobrança já liquidada. Este pagamento é duplicado ou excedente.",
                     charge.Amount, evt.PaidAmount,
                     ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null,
                 null);
         }
 
-        // ── Cobrança em PendingReview (reservada por outro match de baixa confiança)
-        if (charge.Status == ChargeStatus.PendingReview)
-        {
-            if (match.Confidence != ConfidenceLevel.High)
-            {
-                return new ReconciliationOutcome(
-                    ReconciliationResult.Create(
-                        orgId, charge.Id, evt.Id,
-                        ReconciliationStatus.DuplicatePayment,
-                        "Cobrança já reservada por outro match em análise.",
-                        charge.Amount, evt.PaidAmount,
-                        ConfidenceLevel.High, match.Reason, match.MatchedField),
-                    null);
-            }
-
-            await _reconciliations.AbandonPendingReviewForChargeAsync(charge.Id, ct);
-            charge.RevertToPending();
-        }
-
-        // ── Cobrança expirada ─────────────────────────────────────────────────────
         if (charge.IsExpired())
         {
             charge.MarkAsDivergent();
@@ -174,10 +175,10 @@ public sealed class ReconciliationEngine
                     $"Cobrança expirou em {charge.ExpiresAt:dd/MM/yyyy HH:mm} e recebeu pagamento após o prazo.",
                     charge.Amount, evt.PaidAmount,
                     match.Confidence, MatchReason.FoundButExpired, match.MatchedField),
-                charge);
+                charge,
+                new PaymentAllocationInstruction(charge.Id, evt.Id, evt.PaidAmount, AllocationRecognition.Recognized));
         }
 
-        // ── Match de baixa/média confiança — reserva para revisão (valor = cobrança) ─
         if (match.Confidence is ConfidenceLevel.Low or ConfidenceLevel.Medium)
         {
             if (evt.PaidAmount != charge.Amount)
@@ -191,7 +192,8 @@ public sealed class ReconciliationEngine
                         $"Match fuzzy exige valor igual ao da cobrança. Pago R${evt.PaidAmount:F2} vs cobrança R${charge.Amount:F2} (delta: {delta:+0.00;-0.00}).",
                         charge.Amount, evt.PaidAmount,
                         match.Confidence, MatchReason.FoundWithAmountMismatch, match.MatchedField),
-                    charge);
+                    charge,
+                    new PaymentAllocationInstruction(charge.Id, evt.Id, evt.PaidAmount, AllocationRecognition.Recognized));
             }
 
             charge.MarkAsPendingReview();
@@ -202,10 +204,10 @@ public sealed class ReconciliationEngine
                     $"Match por {match.MatchedField} sem identificador único. Aguarda confirmação humana.",
                     charge.Amount, evt.PaidAmount,
                     match.Confidence, match.Reason, match.MatchedField),
-                charge);
+                charge,
+                null);
         }
 
-        // ── Alta confiança: saldo = esperado − soma dos pagamentos já alocados ─────
         var allocatedBefore = await _reconciliations.SumAllocatedTowardChargeAsync(charge.Id, ct);
         var remaining       = charge.Amount - allocatedBefore;
 
@@ -218,14 +220,17 @@ public sealed class ReconciliationEngine
                     "A soma dos pagamentos já cobre o valor esperado desta cobrança. Este evento é duplicado ou excedente.",
                     charge.Amount, evt.PaidAmount,
                     ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null,
                 null);
         }
 
         var newTotal = allocatedBefore + evt.PaidAmount;
+        var allocAmt = Math.Min(evt.PaidAmount, remaining);
+        var allocation = new PaymentAllocationInstruction(
+            charge.Id, evt.Id, allocAmt, AllocationRecognition.Recognized);
 
         if (newTotal < charge.Amount)
         {
-            charge.MarkAsPartiallyPaid();
             var stillOwed = charge.Amount - newTotal;
             return new ReconciliationOutcome(
                 ReconciliationResult.Create(
@@ -234,12 +239,12 @@ public sealed class ReconciliationEngine
                     $"Parcialmente pago — total recebido R${newTotal:F2} de R${charge.Amount:F2}; faltam R${stillOwed:F2}.",
                     charge.Amount, evt.PaidAmount,
                     ConfidenceLevel.High, match.Reason, match.MatchedField),
-                charge);
+                charge,
+                allocation);
         }
 
         if (newTotal == charge.Amount)
         {
-            charge.MarkAsPaid();
             var reasonText = allocatedBefore > 0
                 ? $"Conciliado por soma de pagamentos — total recebido R${newTotal:F2}."
                 : "Pagamento conciliado com sucesso.";
@@ -251,7 +256,8 @@ public sealed class ReconciliationEngine
                     reasonText,
                     charge.Amount, evt.PaidAmount,
                     ConfidenceLevel.High, matchReason, match.MatchedField),
-                charge);
+                charge,
+                allocation);
         }
 
         charge.MarkAsOverpaid();
@@ -264,7 +270,8 @@ public sealed class ReconciliationEngine
                 $"com R${evt.PaidAmount:F2} o total ultrapassa em R${excess:F2}.",
                 charge.Amount, evt.PaidAmount,
                 ConfidenceLevel.High, MatchReason.PaymentExceedsBalance, match.MatchedField),
-            charge);
+            charge,
+            allocation);
     }
 
     // ── Value object interno ──────────────────────────────────────────────────

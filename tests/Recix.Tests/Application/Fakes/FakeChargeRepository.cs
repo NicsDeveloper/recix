@@ -41,13 +41,19 @@ public sealed class FakeChargeRepository : IChargeRepository
 
     public Task<List<Charge>> FindPendingByAmountAsync(decimal amount, Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult(_store
-            .Where(c => c.Status == ChargeStatus.Pending && c.Amount == amount && c.OrganizationId == organizationId)
+            .Where(c => (c.Status == ChargeStatus.Pending
+                         || c.Status == ChargeStatus.PartiallyPaid
+                         || c.Status == ChargeStatus.Divergent)
+                     && c.Amount == amount
+                     && c.OrganizationId == organizationId)
             .OrderBy(c => c.CreatedAt)
             .ToList());
 
     public Task<List<Charge>> FindPendingByAmountAndDateRangeAsync(decimal amount, Guid organizationId, DateTime from, DateTime to, CancellationToken ct = default) =>
         Task.FromResult(_store
-            .Where(c => c.Status == ChargeStatus.Pending
+            .Where(c => (c.Status == ChargeStatus.Pending
+                         || c.Status == ChargeStatus.PartiallyPaid
+                         || c.Status == ChargeStatus.Divergent)
                      && c.Amount == amount
                      && c.OrganizationId == organizationId
                      && c.CreatedAt >= from

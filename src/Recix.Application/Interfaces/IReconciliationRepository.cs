@@ -51,10 +51,17 @@ public interface IReconciliationRepository
     Task<bool> HasReconciliationForChargeAsync(Guid chargeId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Soma os valores de pagamentos já contabilizados para a cobrança (Matched, PartialPayment,
-    /// AmountMismatch parcial legado, MatchedLowConfidence confirmado).
+    /// Soma os valores reconhecidos para a cobrança: preferencialmente via <see cref="PaymentAllocation"/>;
+    /// se não houver alocações, usa a regra legada sobre <see cref="ReconciliationResult"/>.
     /// </summary>
     Task<decimal> SumAllocatedTowardChargeAsync(Guid chargeId, CancellationToken cancellationToken = default);
+
+    Task AddPaymentAllocationAsync(PaymentAllocation allocation, CancellationToken cancellationToken = default);
+
+    /// <summary>Soma reconhecida por cobrança (apenas alocações ativas e reconhecidas).</summary>
+    Task<IReadOnlyDictionary<Guid, decimal>> SumRecognizedAllocationsByChargeIdsAsync(
+        IReadOnlyList<Guid> chargeIds,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Descarta revisões pendentes na cobrança quando um match por identificador exato assume o processamento.

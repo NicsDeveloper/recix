@@ -141,8 +141,44 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
 
     public async Task<decimal> SumAllocatedTowardChargeAsync(Guid chargeId, CancellationToken ct = default)
     {
-        // Não usa OrgQuery: o chargeId já identifica a cobrança (ex.: jobs sem escopo de org).
-        return await db.ReconciliationResults
+        var fromAlloc = await db.PaymentAllocations
+            .Where(a => a.ChargeId == chargeId
+                        && a.VoidedAt == null
+                        && a.Recognition == AllocationRecognition.Recognized)
+            .SumAsync(a => a.Amount, ct);
+
+        if (fromAlloc > 0m)
+            return fromAlloc;
+
+        return await SumLegacyAllocatedTowardChargeAsync(chargeId, ct);
+    }
+
+    public async Task AddPaymentAllocationAsync(PaymentAllocation allocation, CancellationToken ct = default)
+    {
+        await db.PaymentAllocations.AddAsync(allocation, ct);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, decimal>> SumRecognizedAllocationsByChargeIdsAsync(
+        IReadOnlyList<Guid> chargeIds,
+        CancellationToken ct = default)
+    {
+        if (chargeIds.Count == 0)
+            return new Dictionary<Guid, decimal>();
+
+        var rows = await db.PaymentAllocations
+            .Where(a => chargeIds.Contains(a.ChargeId)
+                        && a.VoidedAt == null
+                        && a.Recognition == AllocationRecognition.Recognized)
+            .GroupBy(a => a.ChargeId)
+            .Select(g => new { ChargeId = g.Key, Sum = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(x => x.ChargeId, x => x.Sum);
+    }
+
+    private async Task<decimal> SumLegacyAllocatedTowardChargeAsync(Guid chargeId, CancellationToken ct) =>
+        await db.ReconciliationResults
             .Where(r => r.ChargeId == chargeId && r.PaymentEventId != Guid.Empty)
             .Where(r =>
                 r.Status == ReconciliationStatus.Matched
@@ -152,7 +188,6 @@ public sealed class ReconciliationRepository(RecixDbContext db, ICurrentOrganiza
                     && r.ExpectedAmount.HasValue
                     && r.PaidAmount < r.ExpectedAmount.Value))
             .SumAsync(r => r.PaidAmount, ct);
-    }
 
     public async Task AbandonPendingReviewForChargeAsync(Guid chargeId, CancellationToken ct = default)
     {

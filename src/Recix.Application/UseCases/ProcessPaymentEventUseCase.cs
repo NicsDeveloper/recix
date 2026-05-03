@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Recix.Application.Interfaces;
 using Recix.Application.Services;
+using Recix.Domain.Entities;
 using Recix.Domain.Enums;
 
 namespace Recix.Application.UseCases;
@@ -11,6 +12,7 @@ public sealed class ProcessPaymentEventUseCase
     private readonly IChargeRepository _charges;
     private readonly IReconciliationRepository _reconciliations;
     private readonly ReconciliationEngine _engine;
+    private readonly ChargeBalanceApplier _chargeBalanceApplier;
     private readonly PaymentReliabilityMetrics _metrics;
     private readonly IEventBroadcaster _broadcaster;
     private readonly IAlertNotifier _alertNotifier;
@@ -21,6 +23,7 @@ public sealed class ProcessPaymentEventUseCase
         IChargeRepository charges,
         IReconciliationRepository reconciliations,
         ReconciliationEngine engine,
+        ChargeBalanceApplier chargeBalanceApplier,
         PaymentReliabilityMetrics metrics,
         IEventBroadcaster broadcaster,
         IAlertNotifier alertNotifier,
@@ -28,9 +31,10 @@ public sealed class ProcessPaymentEventUseCase
     {
         _events          = events;
         _charges         = charges;
-        _reconciliations = reconciliations;
-        _engine          = engine;
-        _metrics         = metrics;
+        _reconciliations      = reconciliations;
+        _engine               = engine;
+        _chargeBalanceApplier = chargeBalanceApplier;
+        _metrics              = metrics;
         _broadcaster     = broadcaster;
         _alertNotifier   = alertNotifier;
         _logger          = logger;
@@ -66,10 +70,25 @@ public sealed class ProcessPaymentEventUseCase
 
             await _reconciliations.AddAsync(outcome.Result, cancellationToken);
 
-            if (outcome.Charge is not null)
+            if (outcome.Allocation is { } ins)
             {
-                await _charges.UpdateAsync(outcome.Charge, cancellationToken);
-                _broadcaster.Publish(RecixEvent.ChargeUpdated(outcome.Charge.Id, paymentEvent.OrganizationId));
+                await _reconciliations.AddPaymentAllocationAsync(
+                    PaymentAllocation.CreateRecognized(
+                        paymentEvent.OrganizationId,
+                        ins.ChargeId,
+                        ins.PaymentEventId,
+                        ins.Amount),
+                    cancellationToken);
+            }
+
+            var chargeId = outcome.Result.ChargeId ?? outcome.Charge?.Id;
+            if (chargeId.HasValue)
+            {
+                // Pagamento em cobrança já expirada: mantém Divergente para auditoria (não fecha como Pago só pela soma).
+                if (outcome.Result.Status != ReconciliationStatus.ExpiredChargePaid)
+                    await _chargeBalanceApplier.RecalculateAsync(chargeId.Value, cancellationToken);
+
+                _broadcaster.Publish(RecixEvent.ChargeUpdated(chargeId.Value, paymentEvent.OrganizationId));
             }
 
             paymentEvent.MarkAsProcessed();
