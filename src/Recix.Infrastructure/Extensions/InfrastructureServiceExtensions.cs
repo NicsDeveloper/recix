@@ -37,6 +37,7 @@ public static class InfrastructureServiceExtensions
 
         services.AddScoped<ReconciliationEngine>();
         services.AddScoped<CreateChargeUseCase>();
+        services.AddScoped<CancelChargeUseCase>();
         services.AddScoped<ReceivePixWebhookUseCase>();
         services.AddScoped<ProcessPaymentEventUseCase>();
         services.AddScoped<DashboardQueryService>();

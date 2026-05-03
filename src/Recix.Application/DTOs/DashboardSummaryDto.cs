@@ -8,6 +8,12 @@ public sealed class DashboardSummaryDto
     public int DivergentCharges { get; init; }
     public int ExpiredCharges { get; init; }
 
+    /// <summary>
+    /// Soma dos valores das cobranças no período (operacional): inclui pendentes, parciais, etc.
+    /// Exclui canceladas. Alinha com o valor esperado do fechamento do período.
+    /// </summary>
+    public decimal TotalExpectedAmount { get; init; }
+
     /// <summary>Soma de cobranças Paid — não inclui MatchedLowConfidence não confirmados.</summary>
     public decimal TotalReceivedAmount  { get; init; }
 

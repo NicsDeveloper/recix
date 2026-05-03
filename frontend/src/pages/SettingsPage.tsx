@@ -22,6 +22,7 @@ import { LoadingState } from '../components/ui/LoadingState'
 import { ErrorState } from '../components/ui/ErrorState'
 import { settingsService } from '../services/settingsService'
 import { dashboardService } from '../services/dashboardService'
+import { METRIC_LABELS } from '../lib/metricLabels'
 import { organizationsService } from '../services/organizationsService'
 import { formatCurrency, formatDateTime } from '../lib/formatters'
 import { useAuth } from '../contexts/AuthContext'
@@ -102,7 +103,7 @@ function ClosingReportSection() {
             <p className="text-xs text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
               <TrendingUp size={11} /> Financeiro
             </p>
-            <StatRow label="Esperado" value={formatCurrency(report.expectedAmount)} />
+            <StatRow label={METRIC_LABELS.closingExpectedLabel} value={formatCurrency(report.expectedAmount)} />
             <StatRow label="Recebido" value={formatCurrency(report.receivedAmount)} sub={`${report.recoveryRate}% do esperado`} />
             <StatRow label="Divergente" value={formatCurrency(report.divergentAmount)} />
             <StatRow label="Pendente" value={formatCurrency(report.pendingAmount)} />

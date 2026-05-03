@@ -14,8 +14,27 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
             ? db.Charges.Where(c => c.OrganizationId == currentOrg.OrganizationId.Value)
             : db.Charges;
 
+    /// <summary>
+    /// Parâmetros de data vêm em ISO UTC da API; <see cref="DateTimeKind.Unspecified"/> não deve ser tratado como hora local do servidor.
+    /// </summary>
+    private static DateTime AsUtcQueryInstant(DateTime dt) =>
+        dt.Kind switch
+        {
+            DateTimeKind.Utc         => dt,
+            DateTimeKind.Local       => dt.ToUniversalTime(),
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+            _                        => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+        };
+
     public Task<Charge?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         OrgQuery().FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public Task<List<Charge>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
+    {
+        if (ids.Count == 0)
+            return Task.FromResult(new List<Charge>());
+        return OrgQuery().Where(c => ids.Contains(c.Id)).ToListAsync(ct);
+    }
 
     public Task<Charge?> GetByReferenceIdAsync(string referenceId, CancellationToken ct = default) =>
         OrgQuery().FirstOrDefaultAsync(c => c.ReferenceId == referenceId, ct);
@@ -92,9 +111,10 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
         if (status.HasValue)
             query = query.Where(c => c.Status == status.Value);
         if (fromDate.HasValue)
-            query = query.Where(c => c.CreatedAt >= fromDate.Value.ToUniversalTime());
+            query = query.Where(c => c.CreatedAt >= AsUtcQueryInstant(fromDate.Value));
+        // toDate = fim exclusivo em UTC (cliente envia meia-noite local do dia após o último dia incluso).
         if (toDate.HasValue)
-            query = query.Where(c => c.CreatedAt < toDate.Value.ToUniversalTime().AddDays(1));
+            query = query.Where(c => c.CreatedAt < AsUtcQueryInstant(toDate.Value));
 
         var total = await query.CountAsync(ct);
         var items = await query

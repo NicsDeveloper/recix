@@ -11,6 +11,7 @@ import { paymentEventsService } from '../services/paymentEventsService'
 import { reconciliationsService } from '../services/reconciliationsService'
 import { dashboardService } from '../services/dashboardService'
 import { formatCurrency, formatDateTime } from '../lib/formatters'
+import { METRIC_LABELS } from '../lib/metricLabels'
 import type { ClosingReport } from '../types'
 
 type ReportType = 'charges' | 'payment-events' | 'reconciliations'
@@ -283,7 +284,7 @@ function ClosingReportSection({ fromDate, toDate }: { fromDate: string; toDate: 
           <p className="text-[11px] text-gray-500 mb-4">Valores agregados das cobranças no intervalo (contabilidade operacional / fecho).</p>
           <div className="space-y-3">
             {[
-              { label: 'Valor esperado', sub: 'Soma dos montantes das cobranças no período', value: formatCurrency(r.expectedAmount), color: 'text-gray-100' },
+              { label: METRIC_LABELS.closingExpectedLabel, sub: METRIC_LABELS.closingExpectedSub, value: formatCurrency(r.expectedAmount), color: 'text-gray-100' },
               { label: 'Valor recebido', sub: 'Soma das cobranças com status pago (no sistema)', value: formatCurrency(r.receivedAmount), color: 'text-green-400' },
               {
                 label: 'Diferença (esperado − recebido)',
@@ -524,7 +525,7 @@ export function ReportsPage() {
         </div>
         <p className="text-xs text-gray-500 mb-4 max-w-3xl leading-relaxed">
           O ficheiro contém apenas as linhas do tipo escolhido que caem no período abaixo.
-          Os totais do <span className="text-gray-400">Bloco A</span> referem-se a esse subconjunto — não ao resumo financeiro do sistema acima.
+          Os totais do export referem-se a esse subconjunto — não ao resumo financeiro do sistema acima.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <div className="rounded-lg border border-gray-800 bg-gray-800/40 p-3">
@@ -704,7 +705,7 @@ export function ReportsPage() {
               ({(lastReportType ?? reportType) === 'charges' ? 'amount'
                 : (lastReportType ?? reportType) === 'payment-events' ? 'paidAmount'
                   : 'paidAmount (conciliações)'}
-              ). O total de linhas refere-se só a este tipo e período; o resumo operacional (Bloco C) conta todas as cobranças no período.
+              ). O total de linhas refere-se só a este tipo e período; o resumo operacional acima conta todas as cobranças no período.
             </p>
             <p className="text-[10px] text-gray-600">Gerado em {formatDateTime(lastGeneratedAt)}.</p>
           </div>

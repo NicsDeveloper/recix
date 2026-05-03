@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { Calendar, ChevronDown, Plus } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
+export type DashboardDatePreset = 'today' | '7d' | '30d'
+
 interface DashboardHeaderProps {
   title: string
   subtitle: string
@@ -11,6 +13,8 @@ interface DashboardHeaderProps {
   updatedAt: string | null | undefined
   onFromDateChange: (v: string) => void
   onToDateChange:   (v: string) => void
+  /** Atalhos de intervalo (alinhados ao filtro da página Cobranças). */
+  onDatePreset?: (preset: DashboardDatePreset) => void
 }
 
 function timeAgo(updatedAt: string | null | undefined) {
@@ -32,7 +36,7 @@ function fmtDateBr(iso: string) {
 
 export function DashboardHeader({
   title, subtitle, fromDate, toDate, updatedAt,
-  onFromDateChange, onToDateChange,
+  onFromDateChange, onToDateChange, onDatePreset,
 }: DashboardHeaderProps) {
   const { currentOrg } = useAuth()
   const isAdmin = currentOrg?.role === 'Owner' || currentOrg?.role === 'Admin'
@@ -76,7 +80,9 @@ export function DashboardHeader({
                 </span>
                 {fmtDateBr(toDate)}
               </p>
-              <p className="text-[10px] text-gray-600 leading-none mt-0.5">Período personalizado</p>
+              <p className="text-[10px] text-gray-600 leading-none mt-0.5">
+                Intervalo · por data de criação da cobrança
+              </p>
             </div>
             <ChevronDown
               size={16}
@@ -109,6 +115,32 @@ export function DashboardHeader({
                     className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 [color-scheme:dark]"
                   />
                 </label>
+                {onDatePreset && (
+                  <div className="pt-2 border-t border-gray-800">
+                    <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-2">Atalhos</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ['today', 'Hoje'] as const,
+                          ['7d', '7 dias'] as const,
+                          ['30d', '30 dias'] as const,
+                        ] as const
+                      ).map(([preset, label]) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            onDatePreset(preset)
+                            setRangeOpen(false)
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-600 bg-gray-800/80 text-gray-300 hover:bg-gray-700 hover:border-gray-500"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <button
                 type="button"

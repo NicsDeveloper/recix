@@ -1,4 +1,5 @@
 import { http } from '../lib/http'
+import { normalizeDateParamForApi } from '../lib/dateRangeParam'
 import type { PagedResult, ReconciliationListParams, ReconciliationResult, RecentReconciliation, PendingReviewList } from '../types'
 
 export interface EnrichedReconciliationParams {
@@ -20,8 +21,10 @@ export const reconciliationsService = {
 
   async listEnriched(params: EnrichedReconciliationParams = {}): Promise<PagedResult<RecentReconciliation>> {
     const normalized: Record<string, unknown> = { pageSize: 20, ...params }
-    if (params.fromDate && !params.fromDate.includes('T')) normalized.fromDate = `${params.fromDate}T00:00:00Z`
-    if (params.toDate   && !params.toDate.includes('T'))   normalized.toDate   = `${params.toDate}T23:59:59Z`
+    if (params.fromDate && !params.fromDate.includes('T'))
+      normalized.fromDate = normalizeDateParamForApi(params.fromDate, 'start')
+    if (params.toDate && !params.toDate.includes('T'))
+      normalized.toDate = normalizeDateParamForApi(params.toDate, 'end')
     const { data } = await http.get<PagedResult<RecentReconciliation>>('/reconciliations/enriched', { params: normalized })
     return data
   },

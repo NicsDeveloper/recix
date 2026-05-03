@@ -38,7 +38,7 @@ export function FluxFinanceiroLineChart({ fluxSeries, summary }: {
   const [period, setPeriod]   = useState('Por hora')
   const [open,   setOpen]     = useState(false)
   const divTotal = effectiveDivergenceAmount(summary)
-  const expectedTotal = Math.max(0, summary.totalReceivedAmount - divTotal)
+  const expectedTotal = Number(summary.totalExpectedAmount ?? 0)
 
   return (
     <div className="flex flex-col h-full">

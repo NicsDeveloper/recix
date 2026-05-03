@@ -14,18 +14,15 @@ import {
 } from 'recharts'
 import { dashboardService } from '../services/dashboardService'
 import { reconciliationsService } from '../services/reconciliationsService'
+import { Header } from '../components/layout/Header'
 import { AiExplanationModal } from '../components/modals/AiExplanationModal'
 import { LoadingState } from '../components/ui/LoadingState'
 import { formatCurrency } from '../lib/formatters'
+import { getLocalTodayYmd, shiftLocalDaysFromToday } from '../lib/dateRangeParam'
+import { METRIC_LABELS } from '../lib/metricLabels'
 import type { ChargeReconciliationSummary, RecentReconciliation, ReconciliationStatus, FluxPoint, PendingReviewItem } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function todayISO() { return new Date().toISOString().slice(0, 10) }
-function sevenDaysAgoISO() {
-  const d = new Date(); d.setDate(d.getDate() - 6)
-  return d.toISOString().slice(0, 10)
-}
 
 function fmtDateShort(iso: string) {
   const d = new Date(iso)
@@ -93,9 +90,9 @@ function KpiCard({ title, value, subtitle, sparkValues, color, textColor }: {
   sparkValues: number[]; color: string; textColor: string
 }) {
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
-      <p className="text-xs font-medium text-gray-400 mb-2">{title}</p>
-      <p className={`text-2xl font-black tabular-nums leading-none ${textColor}`}>{value}</p>
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+      <p className="text-xs text-gray-500 mb-2">{title}</p>
+      <p className={`text-2xl font-semibold tabular-nums leading-none ${textColor}`}>{value}</p>
       <div className="flex items-end justify-between mt-3">
         <p className="text-xs text-gray-500">{subtitle}</p>
         <Sparkline values={sparkValues} color={color} />
@@ -156,7 +153,7 @@ function ProgressDonut({ data }: { data: { label: string; value: number; pct: st
   const chartData = data.filter(d => d.value > 0)
 
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 h-full">
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 h-full">
       <h3 className="text-sm font-semibold text-gray-200 mb-4">Progresso da conciliação</h3>
       <div className="flex items-start gap-4">
         {/* Donut */}
@@ -172,7 +169,7 @@ function ProgressDonut({ data }: { data: { label: string; value: number; pct: st
             </PieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <p className="text-lg font-black text-gray-50 leading-none tabular-nums">
+            <p className="text-lg font-semibold text-gray-50 leading-none tabular-nums">
               {total.toLocaleString('pt-BR')}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">total</p>
@@ -213,7 +210,7 @@ type DivergenceRow = { label: string; amount: number; count: number; maxAmount: 
 function DivergenceReasons({ rows }: { rows: DivergenceRow[] }) {
   const max = Math.max(...rows.map(r => r.amount), 1)
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 h-full">
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 h-full">
       <h3 className="text-sm font-semibold text-gray-200 mb-4">Divergências por motivo</h3>
       <div className="space-y-4">
         {rows.map(r => (
@@ -271,7 +268,7 @@ function ByDayChart({ fluxSeries }: { fluxSeries: FluxPoint[] }) {
   }
 
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 h-full flex flex-col">
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-200">Conciliações por dia</h3>
         <div className="relative">
@@ -378,7 +375,7 @@ function FilterSelect({ label, value, options, onChange }: {
 }) {
   return (
     <select value={value} onChange={e => onChange(e.target.value)} aria-label={label}
-      className="bg-gray-900 border border-gray-700 rounded-lg text-xs text-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors h-9">
+      className="bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-300 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 focus:border-indigo-500/40 transition-colors h-9">
       <option value="">{label}</option>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -677,13 +674,13 @@ function PendingReviewTab() {
       )}
 
       {items.length === 0 ? (
-        <div className="rounded-2xl border border-gray-800 bg-gray-900 p-12 text-center">
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-12 text-center">
           <CheckCircle size={32} className="mx-auto text-green-400 mb-3" />
           <p className="text-sm font-semibold text-gray-200 mb-1">Nenhum item pendente</p>
           <p className="text-xs text-gray-500">Todas as conciliações estão resolvidas. O período pode ser fechado.</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+        <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
           <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-800 bg-amber-500/5">
             <Eye size={15} className="text-amber-400" />
             <div>
@@ -785,8 +782,8 @@ export function ReconciliationsPage() {
       : tabParam === 'by-charge' || tabParam === 'by-event' ? tabParam
         : 'overview'
   const [tab, setTab] = useState<Tab | 'review'>(initialTab)
-  const [fromDate, setFromDate]     = useState(sevenDaysAgoISO)
-  const [toDate, setToDate]         = useState(todayISO)
+  const [fromDate, setFromDate]     = useState(() => shiftLocalDaysFromToday(-6))
+  const [toDate, setToDate]         = useState(getLocalTodayYmd)
   const [page, setPage]             = useState(1)
   const [pageSize, setPageSize]     = useState(10)
   const [aiTarget, setAiTarget]     = useState<{ id: string; status: ReconciliationStatus } | null>(null)
@@ -949,37 +946,44 @@ export function ReconciliationsPage() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5">
-
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-50">Conciliações</h1>
-          <p className="text-sm text-gray-500 mt-0.5 max-w-2xl">
-            Auditoria financeira: bate o que caiu no banco com o esperado, divergências e origem do evento.
-            {' '}
-            <Link to="/charges" className="text-indigo-400 hover:text-indigo-300 font-medium whitespace-nowrap">
-              Ir para cobranças (operacional)
-            </Link>
-            .
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-700 bg-gray-900 text-sm text-gray-300 hover:bg-gray-800 transition-colors font-medium">
-            <Download size={14} /> Exportar
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
-            <Sparkles size={14} /> Gerar conciliação
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <Header
+        title="Conciliações"
+        subtitle={(
+          <>
+            <span>
+              Auditoria financeira: bate o que caiu no banco com o esperado, divergências e origem do evento.{' '}
+              <Link to="/charges" className="font-medium whitespace-nowrap">Ir para cobranças (operacional)</Link>.
+            </span>
+            <span className="block text-xs text-gray-500">
+              KPIs e gráficos usam o fechamento e a visão geral do período selecionado nos filtros abaixo.
+            </span>
+          </>
+        )}
+        action={(
+          <>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-800 bg-gray-950 text-sm font-medium text-gray-300 hover:bg-gray-800/80 transition-colors"
+            >
+              <Download size={14} /> Exportar
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+            >
+              <Sparkles size={14} /> Gerar conciliação
+            </button>
+          </>
+        )}
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard title="Total conciliado"       value={formatCurrency(totalConciliado)} subtitle={`${conciliadoPct} do esperado`} sparkValues={sparks.conciliado} color="#22c55e" textColor="text-green-400" />
         <KpiCard title="Pendente de conciliação" value={formatCurrency(totalPendente)}  subtitle={`${pendentePct} do esperado`}   sparkValues={sparks.pendente}   color="#3b82f6" textColor="text-blue-400" />
         <KpiCard title="Divergências"            value={formatCurrency(totalDivergente)} subtitle={`${divergentePct} do esperado`} sparkValues={sparks.divergente} color="#f97316" textColor="text-orange-400" />
-        <KpiCard title="Total esperado"          value={formatCurrency(totalEsperado)}  subtitle="100%"                           sparkValues={sparks.esperado}   color="#8b5cf6" textColor="text-purple-400" />
+        <KpiCard title={METRIC_LABELS.expectedTotalTitle} value={formatCurrency(totalEsperado)} subtitle="Mesmo total do fechamento no período" sparkValues={sparks.esperado} color="#8b5cf6" textColor="text-purple-400" />
       </div>
 
       {/* Tabs */}
@@ -1013,27 +1017,27 @@ export function ReconciliationsPage() {
 
       {/* Filter bar — só visível nas abas normais */}
       {tab !== 'review' && <>
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Date range */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-700 bg-gray-900 text-xs text-gray-300 h-9">
-          <Calendar size={13} className="text-gray-500" />
-          <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setPage(1) }}
-            className="bg-transparent text-xs text-gray-300 focus:outline-none w-28" />
-          <span className="text-gray-600">-</span>
-          <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setPage(1) }}
-            className="bg-transparent text-xs text-gray-300 focus:outline-none w-28" />
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-800 bg-gray-950 text-xs text-gray-300 h-9">
+            <Calendar size={13} className="text-gray-500 shrink-0" />
+            <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setPage(1) }}
+              className="bg-transparent text-xs text-gray-300 focus:outline-none w-28" />
+            <span className="text-gray-600">-</span>
+            <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setPage(1) }}
+              className="bg-transparent text-xs text-gray-300 focus:outline-none w-28" />
+          </div>
+
+          <FilterSelect label="Cliente" value="" options={[]} onChange={() => {}} />
+          <FilterSelect label="Status"  value={statusFilter} options={STATUS_OPTIONS} onChange={handleStatusFilter} />
+          <FilterSelect label="Tipo"    value="" options={[{ value: 'pix', label: 'PIX' }, { value: 'boleto', label: 'Boleto' }]} onChange={() => {}} />
+          <FilterSelect label="Método"  value="" options={[]} onChange={() => {}} />
+          <FilterSelect label="Valor"   value="" options={[]} onChange={() => {}} />
+
+          <button type="button" className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-800 bg-gray-950 text-xs text-gray-300 hover:bg-gray-800/80 h-9 transition-colors">
+            <SlidersHorizontal size={13} /> Mais filtros
+          </button>
         </div>
-
-        <FilterSelect label="Cliente" value="" options={[]} onChange={() => {}} />
-        <FilterSelect label="Status"  value={statusFilter} options={STATUS_OPTIONS} onChange={handleStatusFilter} />
-        <FilterSelect label="Tipo"    value="" options={[{ value: 'pix', label: 'PIX' }, { value: 'boleto', label: 'Boleto' }]} onChange={() => {}} />
-        <FilterSelect label="Método"  value="" options={[]} onChange={() => {}} />
-        <FilterSelect label="Valor"   value="" options={[]} onChange={() => {}} />
-
-        <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-700 bg-gray-900 text-xs text-gray-300 hover:bg-gray-800 h-9 transition-colors">
-          <SlidersHorizontal size={13} /> Mais filtros
-        </button>
       </div>
 
       {/* Analytics panels */}
@@ -1049,7 +1053,7 @@ export function ReconciliationsPage() {
 
       {/* Tabela: visão geral = só painéis acima; por cobrança = agregado; por evento = uma linha por pagamento */}
       {tab !== 'overview' && (
-      <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+      <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <div>
             <h2 className="text-sm font-semibold text-gray-200">

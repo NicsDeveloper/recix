@@ -12,6 +12,9 @@ public sealed class FakeChargeRepository : IChargeRepository
     public Task<Charge?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult(_store.FirstOrDefault(c => c.Id == id));
 
+    public Task<List<Charge>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default) =>
+        Task.FromResult(_store.Where(c => ids.Contains(c.Id)).ToList());
+
     public Task<Charge?> GetByReferenceIdAsync(string referenceId, CancellationToken ct = default) =>
         Task.FromResult(_store.FirstOrDefault(c => c.ReferenceId == referenceId));
 

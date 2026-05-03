@@ -138,4 +138,15 @@ public sealed class Charge
         Status    = ChargeStatus.Pending;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    /// <summary>Cancelamento manual — apenas enquanto não há pagamento vinculado.</summary>
+    public void Cancel()
+    {
+        if (Status != ChargeStatus.Pending)
+            throw new DomainException(
+                "Só é possível cancelar cobranças ainda pendentes (sem pagamento registrado).");
+
+        Status    = ChargeStatus.Cancelled;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

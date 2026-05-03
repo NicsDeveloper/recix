@@ -25,39 +25,43 @@ public sealed class DashboardQueryService(
     {
         var now = DateTime.UtcNow;
 
-        var resolvedFrom = (fromDate ?? now).ToUniversalTime().Date;
-        var resolvedTo   = (toDate   ?? resolvedFrom).ToUniversalTime().Date;
-        if (resolvedTo < resolvedFrom) (resolvedFrom, resolvedTo) = (resolvedTo, resolvedFrom);
+        // Intervalo em instantes UTC: início inclusivo, fim exclusivo (cliente envia ISO com fim exclusivo).
+        // Importante: se só `toDate` chegar, NÃO usar UtcNow.Date como início — isso corta cobranças criadas antes
+        // de “hoje” em UTC e deixa o dashboard zerado com dados existentes na lista.
+        var (rangeStart, rangeEndExclusive) = ResolveOverviewChargeRange(fromDate, toDate, now);
 
-        var rangeEnd = resolvedTo.AddDays(1); // exclusivo
-        var days     = (resolvedTo - resolvedFrom).Days + 1;
-        var prevFrom = resolvedFrom.AddDays(-days);
-        var prevTo   = resolvedFrom.AddDays(-1);
+        var spanDays = Math.Max(1, (int)Math.Ceiling((rangeEndExclusive - rangeStart).TotalHours / 24.0));
+        var prevStart = rangeStart.AddDays(-spanDays);
+        var prevEndExclusive = rangeStart;
 
         // ─── Cobranças do período ─────────────────────────────────────────────────
-        var chPage    = await charges.ListAsync(null, resolvedFrom, resolvedTo, 1, int.MaxValue, ct);
+        var chPage    = await charges.ListAsync(null, rangeStart, rangeEndExclusive, 1, int.MaxValue, ct);
         var chList    = chPage.Items;
 
         // ─── Conciliações do período ──────────────────────────────────────────────
         var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
         var reconList = reconPage.Items
-            .Where(r => r.CreatedAt >= resolvedFrom && r.CreatedAt < rangeEnd)
+            .Where(r => r.CreatedAt >= rangeStart && r.CreatedAt < rangeEndExclusive)
             .ToList();
 
         // ─── Período anterior ─────────────────────────────────────────────────────
-        var prevChPage    = await charges.ListAsync(null, prevFrom, prevTo, 1, int.MaxValue, ct);
+        var prevChPage    = await charges.ListAsync(null, prevStart, prevEndExclusive, 1, int.MaxValue, ct);
         var prevReconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
         var prevReconList = prevReconPage.Items
-            .Where(r => r.CreatedAt >= prevFrom && r.CreatedAt < resolvedFrom)
+            .Where(r => r.CreatedAt >= prevStart && r.CreatedAt < prevEndExclusive)
             .ToList();
 
-        var summary     = BuildSummary(chList, reconList);
-        var prevSummary = BuildSummary(prevChPage.Items, prevReconList);
-        var fluxSeries  = BuildFluxSeries(chList, resolvedFrom, rangeEnd);
+        // Totais do resumo: incluir cobranças referenciadas por conciliações do período (CreatedAt da cobrança pode cair fora do intervalo).
+        var mergedCurrent = await MergeChargesWithReconciliationReferencesAsync(chList, reconList, ct);
+        var mergedPrev    = await MergeChargesWithReconciliationReferencesAsync(prevChPage.Items, prevReconList, ct);
+
+        var summary     = BuildSummary(mergedCurrent, reconList);
+        var prevSummary = BuildSummary(mergedPrev, prevReconList);
+        var fluxSeries  = BuildFluxSeries(mergedCurrent, rangeStart, rangeEndExclusive);
 
         // ─── Últimas conciliações e pagamentos ────────────────────────────────────
         var recentRecon   = await MapRecentReconciliationsAsync(reconList, ct);
-        var recentPayment = await MapRecentPaymentEventsAsync(resolvedFrom, rangeEnd, ct);
+        var recentPayment = await MapRecentPaymentEventsAsync(rangeStart, rangeEndExclusive, ct);
         var alerts        = BuildAlerts(reconList);
 
         var updatedAt = chList
@@ -80,14 +84,89 @@ public sealed class DashboardQueryService(
 
     // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+    /// <summary>Instantes vindos da API em ISO UTC; <see cref="DateTimeKind.Unspecified"/> não é hora local do servidor.</summary>
+    private static DateTime AsUtcQueryInstant(DateTime dt) =>
+        dt.Kind switch
+        {
+            DateTimeKind.Utc           => dt,
+            DateTimeKind.Local         => dt.ToUniversalTime(),
+            DateTimeKind.Unspecified   => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+            _                          => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+        };
+
+    private async Task<IReadOnlyList<Domain.Entities.Charge>> MergeChargesWithReconciliationReferencesAsync(
+        IReadOnlyList<Domain.Entities.Charge> chargesCreatedInRange,
+        IReadOnlyList<Domain.Entities.ReconciliationResult> reconInRange,
+        CancellationToken ct)
+    {
+        var map = chargesCreatedInRange.DistinctBy(c => c.Id).ToDictionary(c => c.Id);
+        var missingIds = reconInRange
+            .Select(r => r.ChargeId)
+            .Where(id => id.HasValue && !map.ContainsKey(id.Value))
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        if (missingIds.Count > 0)
+        {
+            foreach (var c in await charges.GetByIdsAsync(missingIds, ct))
+                map[c.Id] = c;
+        }
+
+        return map.Values.ToList();
+    }
+
+    /// <summary>
+    /// Deriva o intervalo de cobranças para o overview. Cobre ausência de um dos limites sem assumir
+    /// <see cref="DateTime.UtcNow.Date"/> como início quando só o fim exclusivo veio na query.
+    /// </summary>
+    private static (DateTime rangeStart, DateTime rangeEndExclusive) ResolveOverviewChargeRange(
+        DateTime? fromDate,
+        DateTime? toDate,
+        DateTime utcNow)
+    {
+        var fromUtc = fromDate.HasValue ? AsUtcQueryInstant(fromDate.Value) : (DateTime?)null;
+        var toUtc   = toDate.HasValue ? AsUtcQueryInstant(toDate.Value) : (DateTime?)null;
+
+        DateTime rangeStart;
+        DateTime rangeEndExclusive;
+
+        if (fromUtc.HasValue && toUtc.HasValue)
+        {
+            rangeStart          = fromUtc.Value;
+            rangeEndExclusive   = toUtc.Value;
+        }
+        else if (fromUtc.HasValue && !toUtc.HasValue)
+        {
+            rangeStart          = fromUtc.Value;
+            rangeEndExclusive   = fromUtc.Value.AddDays(1);
+        }
+        else if (!fromUtc.HasValue && toUtc.HasValue)
+        {
+            rangeEndExclusive   = toUtc.Value;
+            rangeStart          = rangeEndExclusive.AddDays(-7);
+        }
+        else
+        {
+            rangeStart          = utcNow.Date.AddDays(-6);
+            rangeEndExclusive   = utcNow.Date.AddDays(1);
+        }
+
+        if (rangeEndExclusive < rangeStart)
+            (rangeStart, rangeEndExclusive) = (rangeEndExclusive, rangeStart);
+        if (rangeEndExclusive <= rangeStart)
+            rangeEndExclusive = rangeStart.AddDays(1);
+
+        return (rangeStart, rangeEndExclusive);
+    }
+
     private static DashboardSummaryDto BuildSummary(
         IReadOnlyList<Domain.Entities.Charge> ch,
         IReadOnlyList<Domain.Entities.ReconciliationResult> rc)
     {
-        var chargeDiv    = ch.Where(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid)
-            .Sum(c => c.Amount);
-        var reconAtt     = SumReconciliationAttentionAmount(rc);
+        var reconAtt      = SumReconciliationAttentionAmount(rc);
         var pendingReview = rc.Count(r => r.RequiresReview && r.ReviewDecision is null);
+        var roll          = ChargeReportingMetrics.Compute(ch);
 
         return new DashboardSummaryDto
         {
@@ -100,8 +179,9 @@ public sealed class DashboardQueryService(
             DivergentCharges      = ch.Count(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid),
             ExpiredCharges        = ch.Count(c => c.Status == ChargeStatus.Expired),
             // Apenas Paid — MatchedLowConfidence não confirmado NÃO conta como recebido
-            TotalReceivedAmount   = ch.Where(c => c.Status == ChargeStatus.Paid).Sum(c => c.Amount),
-            TotalDivergentAmount  = chargeDiv,
+            TotalExpectedAmount   = roll.ExpectedTotal,
+            TotalReceivedAmount   = roll.ReceivedFromPaidTotal,
+            TotalDivergentAmount  = roll.DivergentChargeTotal,
             TotalReconciliationAttentionAmount = reconAtt,
             PendingReviewCount    = pendingReview,
             ReconciliationIssues  = new ReconciliationIssuesDto
@@ -182,16 +262,23 @@ public sealed class DashboardQueryService(
                      .Select(c => (at: c.UpdatedAt ?? c.CreatedAt, c.Amount))
                      .Where(x => x.at >= rangeStart && x.at < rangeEnd).ToList();
 
+        // "Esperado" na série = mesmo conceito do KPI: soma cumulativa (por data de criação) das cobranças não canceladas no intervalo.
+        var expectedByCreation = ch.Where(c => c.Status != ChargeStatus.Cancelled)
+            .Select(c => (at: c.CreatedAt, c.Amount))
+            .Where(x => x.at >= rangeStart && x.at < rangeEnd)
+            .ToList();
+
         return Enumerable.Range(0, buckets).Select(i =>
         {
             var t        = rangeStart + step * i;
             var received = paid.Where(x => x.at <= t).Sum(x => x.Amount);
             var diverged = div.Where(x => x.at <= t).Sum(x => x.Amount);
+            var expected = expectedByCreation.Where(x => x.at <= t).Sum(x => x.Amount);
             return new FluxSeriesPointDto
             {
                 Label    = isHourly ? t.ToString("HH:mm") : t.ToString("dd/MM"),
                 Received = received,
-                Expected = received - diverged,
+                Expected = expected,
                 Divergent = diverged,
             };
         }).ToList();
@@ -227,9 +314,9 @@ public sealed class DashboardQueryService(
             filtered = filtered.Where(r => DivergentStatuses.Contains(r.Status));
 
         if (fromDate.HasValue)
-            filtered = filtered.Where(r => r.CreatedAt.Date >= fromDate.Value.ToUniversalTime().Date);
+            filtered = filtered.Where(r => r.CreatedAt >= fromDate.Value.ToUniversalTime());
         if (toDate.HasValue)
-            filtered = filtered.Where(r => r.CreatedAt.Date <= toDate.Value.ToUniversalTime().Date);
+            filtered = filtered.Where(r => r.CreatedAt < toDate.Value.ToUniversalTime());
 
         var ordered = filtered.OrderByDescending(r => r.CreatedAt).ToList();
         var total   = ordered.Count;
@@ -336,28 +423,33 @@ public sealed class DashboardQueryService(
         DateTime to,
         CancellationToken ct = default)
     {
-        var fromUtc  = from.ToUniversalTime().Date;
-        var toUtc    = to.ToUniversalTime().Date;
-        if (toUtc < fromUtc) (fromUtc, toUtc) = (toUtc, fromUtc);
-        var rangeEnd = toUtc.AddDays(1);
+        var rangeStart = AsUtcQueryInstant(from);
+        var rangeEndExclusive = AsUtcQueryInstant(to);
+        if (rangeEndExclusive < rangeStart)
+            (rangeStart, rangeEndExclusive) = (rangeEndExclusive, rangeStart);
+        if (rangeEndExclusive <= rangeStart)
+            rangeEndExclusive = rangeStart.AddDays(1);
 
-        var chPage    = await charges.ListAsync(null, fromUtc, toUtc, 1, int.MaxValue, ct);
+        var chPage    = await charges.ListAsync(null, rangeStart, rangeEndExclusive, 1, int.MaxValue, ct);
         var ch        = chPage.Items;
         var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
         var rc        = reconPage.Items
-            .Where(r => r.CreatedAt >= fromUtc && r.CreatedAt < rangeEnd)
+            .Where(r => r.CreatedAt >= rangeStart && r.CreatedAt < rangeEndExclusive)
             .ToList();
 
-        var paid     = ch.Where(c => c.Status == ChargeStatus.Paid).ToList();
-        var divg     = ch.Where(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid).ToList();
-        var pending  = ch.Where(c => c.Status is ChargeStatus.Pending
+        var mergedCh = await MergeChargesWithReconciliationReferencesAsync(ch, rc, ct);
+
+        var paid     = mergedCh.Where(c => c.Status == ChargeStatus.Paid).ToList();
+        var divg     = mergedCh.Where(c => c.Status is ChargeStatus.Divergent or ChargeStatus.Overpaid).ToList();
+        var pending  = mergedCh.Where(c => c.Status is ChargeStatus.Pending
                                        or ChargeStatus.PendingReview
                                        or ChargeStatus.PartiallyPaid).ToList();
 
-        var expected  = ch.Sum(c => c.Amount);
-        var received  = paid.Sum(c => c.Amount);
-        var divergent = divg.Sum(c => c.Amount);
-        var pendAmt   = pending.Sum(c => c.Amount);
+        var roll      = ChargeReportingMetrics.Compute(mergedCh);
+        var expected  = roll.ExpectedTotal;
+        var received  = roll.ReceivedFromPaidTotal;
+        var divergent = roll.DivergentChargeTotal;
+        var pendAmt   = roll.PendingOperationalTotal;
         var recovery  = expected > 0 ? Math.Round(received / expected * 100, 2) : 0m;
 
         // Cobranças sem nenhuma conciliação no período
@@ -366,7 +458,7 @@ public sealed class DashboardQueryService(
                                     .ToHashSet();
 
         var unreconciled = ch
-            .Where(c => c.Status is ChargeStatus.Pending or ChargeStatus.Expired
+            .Where(c => (c.Status is ChargeStatus.Pending or ChargeStatus.Expired)
                         && !reconciledChargeIds.Contains(c.Id))
             .OrderByDescending(c => c.Amount)
             .Take(50)
@@ -383,13 +475,13 @@ public sealed class DashboardQueryService(
 
         return new ClosingReportDto
         {
-            From             = fromUtc,
-            To               = toUtc,
-            TotalCharges     = ch.Count,
+            From             = rangeStart,
+            To               = rangeEndExclusive.AddTicks(-1),
+            TotalCharges     = mergedCh.Count,
             PaidCharges      = paid.Count,
             PendingCharges   = pending.Count,
             DivergentCharges = divg.Count,
-            ExpiredCharges   = ch.Count(c => c.Status == ChargeStatus.Expired),
+            ExpiredCharges   = mergedCh.Count(c => c.Status == ChargeStatus.Expired),
             ExpectedAmount   = expected,
             ReceivedAmount   = received,
             DivergentAmount  = divergent,
@@ -445,16 +537,17 @@ public sealed class DashboardQueryService(
         int pageSize,
         CancellationToken ct = default)
     {
-        var now      = DateTime.UtcNow;
-        var fromUtc  = (fromDate ?? now.AddDays(-6)).ToUniversalTime().Date;
-        var toUtc    = (toDate ?? now).ToUniversalTime().Date;
-        if (toUtc < fromUtc)
-            (fromUtc, toUtc) = (toUtc, fromUtc);
-        var rangeEnd = toUtc.AddDays(1);
+        var now = DateTime.UtcNow;
+        var rangeStart = (fromDate ?? now.AddDays(-6)).ToUniversalTime();
+        var rangeEndExclusive = (toDate ?? now).ToUniversalTime();
+        if (rangeEndExclusive < rangeStart)
+            (rangeStart, rangeEndExclusive) = (rangeEndExclusive, rangeStart);
+        if (rangeEndExclusive <= rangeStart)
+            rangeEndExclusive = rangeStart.AddDays(1);
 
         var reconPage = await reconciliations.ListAsync(null, null, null, 1, int.MaxValue, ct);
         var inRange = reconPage.Items
-            .Where(r => r.CreatedAt >= fromUtc && r.CreatedAt < rangeEnd && r.ChargeId.HasValue)
+            .Where(r => r.CreatedAt >= rangeStart && r.CreatedAt < rangeEndExclusive && r.ChargeId.HasValue)
             .ToList();
 
         var groups = inRange

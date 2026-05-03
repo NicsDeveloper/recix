@@ -29,6 +29,13 @@ public static class ChargeEndpoints
             .WithSummary("Retorna detalhes de uma cobrança")
             .Produces<ChargeDto>()
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:guid}/cancel", CancelCharge)
+            .WithName("CancelCharge")
+            .WithSummary("Cancela uma cobrança ainda pendente (sem pagamento)")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> CreateCharge(
@@ -74,5 +81,14 @@ public static class ChargeEndpoints
         var charge = await repo.GetByIdAsync(id, ct)
             ?? throw new KeyNotFoundException($"Charge {id} not found.");
         return Results.Ok(ChargeDto.FromEntity(charge));
+    }
+
+    private static async Task<IResult> CancelCharge(
+        Guid id,
+        CancelChargeUseCase useCase,
+        CancellationToken ct)
+    {
+        await useCase.ExecuteAsync(id, ct);
+        return Results.NoContent();
     }
 }

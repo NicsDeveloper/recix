@@ -15,10 +15,11 @@ import { DashboardKpiCard }          from '../components/dashboard/DashboardKpiC
 import type { FluxPoint, ReconciliationStatus, DashboardSummary } from '../types'
 import { formatCurrency }            from '../lib/formatters'
 import { effectiveDivergenceAmount } from '../lib/dashboardSummary'
+import { METRIC_LABELS } from '../lib/metricLabels'
+import { getLocalTodayYmd, shiftLocalDaysFromToday } from '../lib/dateRangeParam'
+import type { DashboardDatePreset } from '../components/layout/DashboardHeader'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function todayISO() { return new Date().toISOString().slice(0, 10) }
 
 function fmtShort(iso: string | null | undefined) {
   if (!iso) return '—'
@@ -289,9 +290,24 @@ const QUICK_ACTIONS = [
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const [fromDate, setFromDate] = useState(todayISO)
-  const [toDate,   setToDate]   = useState(todayISO)
+  const [fromDate, setFromDate] = useState(() => shiftLocalDaysFromToday(-6))
+  const [toDate,   setToDate]   = useState(getLocalTodayYmd)
   const [verdictDismissed, setVerdictDismissed] = useState(false)
+
+  function applyDatePreset(preset: DashboardDatePreset) {
+    const today = getLocalTodayYmd()
+    if (preset === 'today') {
+      setFromDate(today)
+      setToDate(today)
+    } else if (preset === '7d') {
+      setFromDate(shiftLocalDaysFromToday(-6))
+      setToDate(today)
+    } else {
+      setFromDate(shiftLocalDaysFromToday(-29))
+      setToDate(today)
+    }
+    setVerdictDismissed(false)
+  }
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey:        ['dashboard-overview', fromDate, toDate],
@@ -319,7 +335,7 @@ export function DashboardPage() {
 
   const recvAmt = s.totalReceivedAmount
   const divAmt  = effectiveDivergenceAmount(s)
-  const expAmt  = Math.max(0, recvAmt - divAmt)
+  const expAmt  = Number(s.totalExpectedAmount ?? 0)
   const isOk    = pendingReviewCount === 0 &&
     (ri.amountMismatch + (ri.paymentExceedsExpected ?? 0) + ri.duplicatePayment + ri.paymentWithoutCharge + ri.chargeWithoutPayment +
      ri.multipleMatchCandidates + ri.expiredChargePaid + ri.invalidReference + ri.processingError) === 0
@@ -330,7 +346,7 @@ export function DashboardPage() {
   const spDiv  = sparkFromSeries(data.fluxSeries, 'divergent')
 
   // ── Trend percentages ───────────────────────────────────────────────────────
-  const prevExpAmt  = Math.max(0, prev.totalReceivedAmount - effectiveDivergenceAmount(prev))
+  const prevExpAmt  = Number(prev.totalExpectedAmount ?? 0)
   const prevRecvAmt = prev.totalReceivedAmount
   const prevDivAmt  = effectiveDivergenceAmount(prev)
 
@@ -357,6 +373,7 @@ export function DashboardPage() {
         updatedAt={data.updatedAt}
         onFromDateChange={v => { setFromDate(v); setVerdictDismissed(false) }}
         onToDateChange={v => { setToDate(v); setVerdictDismissed(false) }}
+        onDatePreset={applyDatePreset}
       />
 
       {/* ── Banner de revisão pendente (aparece sempre que há itens) ─────────── */}
@@ -373,9 +390,9 @@ export function DashboardPage() {
           {/* KPI cards */}
           <div className="col-span-12 lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <DashboardKpiCard
-              title="Total esperado"
+              title={METRIC_LABELS.expectedTotalTitle}
               value={formatCurrency(expAmt)}
-              subtitle="Valor das vendas"
+              subtitle={METRIC_LABELS.expectedTotalSubtitle}
               sparkValues={spExp}
               lineColor="#38bdf8"
               trendPct={trendPct(expAmt, prevExpAmt)}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createPortal } from 'react-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Plus, Eye, Search, Download, CalendarDays, SlidersHorizontal,
@@ -12,6 +13,7 @@ import { CreateChargeModal } from '../components/modals/CreateChargeModal'
 import { Header } from '../components/layout/Header'
 import { ErrorState } from '../components/ui/ErrorState'
 import { formatCurrency } from '../lib/formatters'
+import { METRIC_LABELS } from '../lib/metricLabels'
 import type { Charge, ChargeStatus, FluxPoint } from '../types'
 
 // Hex para traços SVG nos KPIs (sparklines).
@@ -64,6 +66,8 @@ function pseudoCNPJ(id: string): string {
 
 function receivedInfo(c: Charge): { pct: number; label: string } {
   switch (c.status) {
+    case 'Cancelled':
+      return { pct: 0, label: formatCurrency(0) }
     case 'Paid':
     case 'Overpaid':
       return { pct: 100, label: formatCurrency(c.amount) }
@@ -75,12 +79,14 @@ function receivedInfo(c: Charge): { pct: number; label: string } {
 }
 
 function pendingCol(c: Charge): { value: number; tone: 'ok' | 'warn' | 'danger' } {
+  if (c.status === 'Cancelled') return { value: 0, tone: 'ok' }
   if (c.status === 'Paid' || c.status === 'Overpaid') return { value: 0, tone: 'ok' }
   if (c.status === 'Expired') return { value: c.amount, tone: 'danger' }
   return { value: c.amount, tone: 'warn' }
 }
 
 function expiryHint(c: Charge): { line: string; sub?: string; danger?: boolean } {
+  if (c.status === 'Cancelled') return { line: '—', sub: 'Cancelada' }
   const exp = new Date(c.expiresAt)
   const now = new Date()
   if (c.status === 'Expired') return { line: exp.toLocaleDateString('pt-BR'), sub: 'Expirada', danger: true }
@@ -142,14 +148,14 @@ function KpiCard({
   rightSlot?: ReactNode
 }) {
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 flex flex-col gap-2 min-h-[112px]">
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex flex-col gap-2 min-h-[104px]">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{title}</p>
+        <p className="text-xs text-gray-500">{title}</p>
         {rightSlot ?? <MiniSparkline values={sparkValues} color={sparkColor} />}
       </div>
-      <p className={`text-xl font-bold tabular-nums tracking-tight ${textColor}`}>{value}</p>
-      <p className="text-[11px] text-gray-500 flex items-center gap-1">
-        <TrendingUp size={11} className="text-gray-600" />
+      <p className={`text-2xl font-semibold tabular-nums tracking-tight ${textColor}`}>{value}</p>
+      <p className="text-xs text-gray-500 flex items-center gap-1">
+        <TrendingUp size={11} className="text-gray-600 flex-shrink-0" />
         {deltaLabel}
       </p>
     </div>
@@ -248,7 +254,8 @@ export function ChargesPage() {
   const pageSize = 10
   const [highlightedChargeId, setHighlightedChargeId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [moreMenuId, setMoreMenuId] = useState<string | null>(null)
+  type MoreMenuAnchor = { chargeId: string; top: number; left: number }
+  const [moreMenu, setMoreMenu] = useState<MoreMenuAnchor | null>(null)
 
   const apiStatus = tabToApiStatus(statusTab)
 
@@ -292,6 +299,17 @@ export function ChargesPage() {
     staleTime: 0,
   })
 
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => chargesService.cancel(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['charges'] })
+      void queryClient.invalidateQueries({ queryKey: ['charges-breakdown'] })
+      void queryClient.invalidateQueries({ queryKey: ['closing-report'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+      setMoreMenu(null)
+    },
+  })
+
   useEffect(() => {
     if (!highlightedChargeId) return
     const t = setTimeout(() => setHighlightedChargeId(null), 5000)
@@ -299,14 +317,20 @@ export function ChargesPage() {
   }, [highlightedChargeId])
 
   useEffect(() => {
-    if (!moreMenuId) return
-    const close = () => setMoreMenuId(null)
-    const t = window.setTimeout(() => window.addEventListener('click', close), 0)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('click', close)
+    if (!moreMenu) return
+    const close = () => setMoreMenu(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
     }
-  }, [moreMenuId])
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [moreMenu])
 
   const flux = overview?.fluxSeries ?? []
   const sparksEsperado = fluxToValues(flux, p => p.expected)
@@ -323,7 +347,7 @@ export function ChargesPage() {
     const q = search.toLowerCase()
     return (
       c.referenceId.toLowerCase().includes(q) ||
-      c.externalId.toLowerCase().includes(q) ||
+      (c.externalId ?? '').toLowerCase().includes(q) ||
       clientTitle(c).toLowerCase().includes(q) ||
       pseudoCNPJ(c.id).includes(q)
     )
@@ -384,16 +408,22 @@ export function ChargesPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <Header
         title="Cobranças"
         subtitle={(
           <>
-            Gestão operacional: o que você espera receber, vencimentos e status da cobrança no sistema.{' '}
-            <Link to="/reconciliations" className="text-indigo-400 hover:text-indigo-300 font-medium whitespace-nowrap">
-              Ver auditoria financeira (conciliações)
-            </Link>
-            .
+            <span>
+              Gestão operacional: o que você espera receber, vencimentos e status da cobrança no sistema.{' '}
+              <Link to="/reconciliations" className="font-medium whitespace-nowrap">
+                Ver auditoria financeira (conciliações)
+              </Link>
+              .
+            </span>
+            <span className="block text-xs text-gray-500">
+              Os indicadores abaixo refletem apenas <span className="text-gray-400 font-medium">cobranças no sistema</span>
+              {' — '}não o extrato bancário.
+            </span>
           </>
         )}
         action={(
@@ -408,15 +438,10 @@ export function ChargesPage() {
         )}
       />
 
-        {/* KPIs — só operacional (cobranças no sistema); auditoria bancária fica em Conciliações */}
-        <p className="text-xs text-gray-500 -mt-2 mb-1">
-          Valores refletem <span className="text-gray-400 font-medium">status das cobranças</span>, não o extrato.
-          {' '}
-          <Link to="/reconciliations" className="text-indigo-400 hover:text-indigo-300 font-medium">Esperado vs recebido (banco)</Link>
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPIs — operacional */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard
-            title="Total esperado (cobranças)"
+            title={METRIC_LABELS.expectedTotalTitle}
             value={formatCurrency(exp)}
             deltaLabel={`${pctDelta(exp, pExp)} vs período anterior`}
             sparkValues={sparksEsperado}
@@ -450,7 +475,7 @@ export function ChargesPage() {
         </div>
 
         {/* Filtros */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-3">
           <div className="flex flex-col xl:flex-row gap-3 xl:items-center">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" size={16} />
@@ -563,7 +588,7 @@ export function ChargesPage() {
         </div>
 
         {/* Tabela */}
-        <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+        <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[1100px]">
               <thead>
@@ -579,7 +604,7 @@ export function ChargesPage() {
                   {['Referência', 'Cliente', 'Valor', 'Status', 'Auditoria', 'Recebido', 'Pendente', 'Vencimento', 'Criado em', 'Ações'].map(h => (
                     <th
                       key={h}
-                      className="px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap"
+                      className="px-3 py-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap"
                     >
                       {h}
                     </th>
@@ -684,33 +709,29 @@ export function ChargesPage() {
                               title="Mais"
                               onClick={e => {
                                 e.stopPropagation()
-                                setMoreMenuId(moreMenuId === c.id ? null : c.id)
+                                if (moreMenu?.chargeId === c.id) {
+                                  setMoreMenu(null)
+                                  return
+                                }
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                const MENU_W = 172
+                                const MENU_GAP = 4
+                                const pad = 8
+                                const left = Math.max(
+                                  pad,
+                                  Math.min(rect.right - MENU_W, window.innerWidth - MENU_W - pad),
+                                )
+                                let top = rect.bottom + MENU_GAP
+                                const estH = 160
+                                if (top + estH > window.innerHeight - pad) {
+                                  top = Math.max(pad, rect.top - estH - MENU_GAP)
+                                }
+                                setMoreMenu({ chargeId: c.id, top, left })
                               }}
                               className="p-2 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800/80"
                             >
                               <MoreVertical size={16} />
                             </button>
-                            {moreMenuId === c.id && (
-                              <div
-                                className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-xl border border-gray-800 bg-gray-900 py-1 shadow-xl"
-                                onClick={e => e.stopPropagation()}
-                              >
-                                <button
-                                  type="button"
-                                  className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-800"
-                                  onClick={() => { navigate(`/charges/${c.id}`); setMoreMenuId(null) }}
-                                >
-                                  Abrir detalhe
-                                </button>
-                                <button
-                                  type="button"
-                                  className="w-full text-left px-3 py-2 text-xs text-gray-500 hover:bg-gray-800 cursor-not-allowed"
-                                  disabled
-                                >
-                                  Exportar linha
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -783,6 +804,74 @@ export function ChargesPage() {
             </div>
           </div>
         </div>
+
+      {moreMenu &&
+        createPortal(
+          <>
+            <div
+              role="presentation"
+              aria-hidden
+              className="fixed inset-0 z-[200]"
+              onClick={() => setMoreMenu(null)}
+            />
+            <div
+              role="menu"
+              className="fixed z-[210] min-w-[172px] rounded-xl border border-gray-800 bg-gray-900 py-1 shadow-xl"
+              style={{ top: moreMenu.top, left: moreMenu.left }}
+              onClick={e => e.stopPropagation()}
+            >
+              {(() => {
+                const c = items.find(x => x.id === moreMenu.chargeId)
+                if (!c) {
+                  return (
+                    <p className="px-3 py-2 text-xs text-gray-500">Cobrança não visível nesta vista.</p>
+                  )
+                }
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-800"
+                      onClick={() => {
+                        navigate(`/charges/${c.id}`)
+                        setMoreMenu(null)
+                      }}
+                    >
+                      Abrir detalhe
+                    </button>
+                    {c.status === 'Pending' && (
+                      <button
+                        type="button"
+                        disabled={cancelMutation.isPending}
+                        className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-gray-800 disabled:opacity-40"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              'Cancelar esta cobrança? Ela não poderá receber PIX e sairá do total esperado do período.',
+                            )
+                          ) {
+                            return
+                          }
+                          cancelMutation.mutate(c.id)
+                        }}
+                      >
+                        Cancelar cobrança
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs text-gray-500 hover:bg-gray-800 cursor-not-allowed"
+                      disabled
+                    >
+                      Exportar linha
+                    </button>
+                  </>
+                )
+              })()}
+            </div>
+          </>,
+          document.body,
+        )}
 
       {showModal && (
         <CreateChargeModal

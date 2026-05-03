@@ -13,7 +13,9 @@ export function Header({ title, subtitle, action }: HeaderProps) {
       <div>
         <h1 className="text-xl font-semibold text-gray-50">{title}</h1>
         {subtitle && (
-          <p className="text-sm text-gray-400 mt-0.5">{subtitle}</p>
+          <div className="text-sm text-gray-400 mt-0.5 max-w-3xl space-y-2 [&_a]:text-indigo-400 [&_a:hover]:text-indigo-300">
+            {subtitle}
+          </div>
         )}
       </div>
       {action && <div className="flex items-center gap-3">{action}</div>}

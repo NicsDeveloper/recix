@@ -266,6 +266,30 @@ public sealed class ChargeTests
         charge.CanReceivePayment().Should().BeFalse();
     }
 
+    // --- Cancel ---
+
+    [Fact]
+    public void Cancel_WhenPending_TransitionsToCancelled()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+
+        charge.Cancel();
+
+        charge.Status.Should().Be(ChargeStatus.Cancelled);
+        charge.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Cancel_WhenPaid_ThrowsDomainException()
+    {
+        var charge = Charge.Create(Guid.NewGuid(), "REF-001", "ext-001", 100m, FutureExpiry);
+        charge.MarkAsPaid();
+
+        var act = () => charge.Cancel();
+
+        act.Should().Throw<DomainException>();
+    }
+
     // --- Helpers ---
 
     // Creates a charge that is already past expiry using a far-future expiry then simulates

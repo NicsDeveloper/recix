@@ -7,6 +7,9 @@ namespace Recix.Application.Interfaces;
 public interface IChargeRepository
 {
     Task<Charge?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Cobranças por id (escopo da organização atual). Ignora ids inexistentes.</summary>
+    Task<List<Charge>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
     Task<Charge?> GetByReferenceIdAsync(string referenceId, CancellationToken cancellationToken = default);
     Task<Charge?> GetByExternalIdAsync(string externalId, CancellationToken cancellationToken = default);
     Task<int> CountByDateAsync(DateTime date, CancellationToken cancellationToken = default);

@@ -1,4 +1,5 @@
 import { http } from '../lib/http'
+import { normalizeDateRangeParamsForApi } from '../lib/dateRangeParam'
 import type { ChargeReconciliationSummary, ClosingReport, DashboardOverview, DashboardSummary, PagedResult } from '../types'
 
 export const dashboardService = {
@@ -8,15 +9,10 @@ export const dashboardService = {
   },
 
   async getOverview(params?: { fromDate?: string; toDate?: string }): Promise<DashboardOverview> {
-    // Backend espera DateTime; inputs do tipo `date` chegam como `yyyy-MM-dd`.
-    // Convertendo para ISO garante model binding consistente.
+    const from = params?.fromDate?.trim()
+    const to = params?.toDate?.trim()
     const normalizedParams =
-      params && (params.fromDate || params.toDate)
-        ? {
-            fromDate: params.fromDate ? normalizeDateParam(params.fromDate, 'start') : undefined,
-            toDate: params.toDate ? normalizeDateParam(params.toDate, 'end') : undefined,
-          }
-        : undefined
+      from || to ? normalizeDateRangeParamsForApi(from, to) : undefined
 
     const { data } = await http.get<DashboardOverview>('/dashboard/overview', { params: normalizedParams })
     return data
@@ -28,14 +24,11 @@ export const dashboardService = {
     page?: number
     pageSize?: number
   }): Promise<PagedResult<ChargeReconciliationSummary>> {
+    const from = params?.fromDate?.trim()
+    const to = params?.toDate?.trim()
     const normalizedParams =
-      params && (params.fromDate || params.toDate)
-        ? {
-            fromDate: params.fromDate ? normalizeDateParam(params.fromDate, 'start') : undefined,
-            toDate: params.toDate ? normalizeDateParam(params.toDate, 'end') : undefined,
-            page: params.page,
-            pageSize: params.pageSize,
-          }
+      from || to
+        ? { ...normalizeDateRangeParamsForApi(from, to), page: params?.page, pageSize: params?.pageSize }
         : { page: params?.page, pageSize: params?.pageSize }
 
     const { data } = await http.get<PagedResult<ChargeReconciliationSummary>>(
@@ -46,21 +39,12 @@ export const dashboardService = {
   },
 
   async getClosingReport(params?: { fromDate?: string; toDate?: string }): Promise<ClosingReport> {
+    const from = params?.fromDate?.trim()
+    const to = params?.toDate?.trim()
     const normalizedParams =
-      params && (params.fromDate || params.toDate)
-        ? {
-            fromDate: params.fromDate ? normalizeDateParam(params.fromDate, 'start') : undefined,
-            toDate: params.toDate ? normalizeDateParam(params.toDate, 'end') : undefined,
-          }
-        : undefined
+      from || to ? normalizeDateRangeParamsForApi(from, to) : undefined
 
     const { data } = await http.get<ClosingReport>('/dashboard/closing-report', { params: normalizedParams })
     return data
   },
-}
-
-function normalizeDateParam(value: string, boundary: 'start' | 'end') {
-  // Se já vier com horário (ex.: ISO completo), não mexe.
-  if (value.includes('T')) return value
-  return boundary === 'start' ? `${value}T00:00:00Z` : `${value}T23:59:59Z`
 }

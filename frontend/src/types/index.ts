@@ -93,6 +93,8 @@ export interface DashboardSummary {
   pendingCharges: number
   divergentCharges: number
   expiredCharges: number
+  /** Soma dos valores das cobranças no período (inclui pendentes; exclui canceladas). */
+  totalExpectedAmount: number
   totalReceivedAmount: number
   totalDivergentAmount: number
   /** Soma monetária das conciliações problemáticas (pode ser maior que zero quando totalDivergentAmount é 0). */
