@@ -121,10 +121,23 @@ function PendingReviewBanner({ count }: { count: number }) {
 
 // ─── Verdict Card ─────────────────────────────────────────────────────────────
 
-function VerdictCard({ isOk, divergentAmt, periodCloseable }: { isOk: boolean; divergentAmt: number; periodCloseable: boolean }) {
+type VerdictState = 'ok' | 'action' | 'info'
+
+function VerdictCard({
+  state,
+  divergentAmt,
+  pendingReviewCount,
+  periodCloseable,
+}: {
+  state: VerdictState
+  divergentAmt: number
+  pendingReviewCount: number
+  periodCloseable: boolean
+}) {
   const navigate = useNavigate()
 
-  if (isOk) {
+  // ── Tudo certo ────────────────────────────────────────────────────────────
+  if (state === 'ok') {
     return (
       <div className="rounded-2xl border border-green-500/25 bg-gradient-to-br from-green-950/60 to-gray-950 p-6 flex flex-col justify-center shadow-[0_0_40px_-12px_rgba(34,197,94,0.3)] h-full">
         <div className="w-14 h-14 rounded-full bg-green-500/15 border border-green-500/25 flex items-center justify-center mb-4">
@@ -139,14 +152,14 @@ function VerdictCard({ isOk, divergentAmt, periodCloseable }: { isOk: boolean; d
         </p>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => navigate('/reconciliations')}
+            onClick={() => navigate('/reconciliations?tab=overview')}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-500/30 bg-green-500/10 text-green-300 text-sm font-semibold hover:bg-green-500/20 transition-colors"
           >
             Ver detalhes <ArrowRight size={14} />
           </button>
           <button
             disabled={!periodCloseable}
-            title={periodCloseable ? 'Fechar o período atual' : 'Há conciliações aguardando revisão — resolva-as antes de fechar o período'}
+            title={periodCloseable ? undefined : 'Há revisões pendentes — resolva antes de fechar'}
             onClick={() => navigate('/reports')}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-500/30 bg-green-500/15 text-green-200 text-sm font-semibold hover:bg-green-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -157,32 +170,49 @@ function VerdictCard({ isOk, divergentAmt, periodCloseable }: { isOk: boolean; d
     )
   }
 
-  return (
-    <div className="rounded-2xl border border-red-500/30 bg-gradient-to-br from-red-950/60 to-gray-950 p-6 flex flex-col justify-center shadow-[0_0_48px_-12px_rgba(239,68,68,0.35)] h-full">
-      <div className="w-14 h-14 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center mb-4">
-        <AlertTriangle size={28} className="text-red-400" />
-      </div>
-      <p className="text-xs font-semibold text-red-400 mb-1">Atenção!</p>
-      <p className="text-xl font-bold text-gray-50 leading-tight mb-2">
-        Seu financeiro <span className="text-orange-400">NÃO</span> está conciliado
-      </p>
-      <p className="text-3xl font-black text-red-400 tabular-nums mb-5">
-        {formatCurrency(divergentAmt)}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => navigate('/reconciliations?filter=divergent')}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors shadow-lg shadow-red-500/20"
-        >
-          Ver divergências <ArrowRight size={14} />
-        </button>
+  // ── Ação necessária — revisão pendente ────────────────────────────────────
+  if (state === 'action') {
+    return (
+      <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-950/50 to-gray-950 p-6 flex flex-col justify-center shadow-[0_0_40px_-12px_rgba(245,158,11,0.25)] h-full">
+        <div className="w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/25 flex items-center justify-center mb-4">
+          <Eye size={28} className="text-amber-400" />
+        </div>
+        <p className="text-xs font-semibold text-amber-400 mb-1">Revisão pendente</p>
+        <p className="text-xl font-bold text-gray-50 leading-tight mb-2">
+          {pendingReviewCount} conciliação{pendingReviewCount !== 1 ? 'ões' : ''} aguarda{pendingReviewCount === 1 ? '' : 'm'} sua decisão
+        </p>
+        <p className="text-sm text-gray-400 mb-6">
+          O sistema encontrou matches que precisam de confirmação humana antes de fechar o período.
+        </p>
         <button
           onClick={() => navigate('/reconciliations')}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-sm font-semibold transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-semibold transition-colors shadow-lg shadow-amber-500/20 w-fit"
         >
-          Entenda os motivos
+          Revisar agora <ArrowRight size={14} />
         </button>
       </div>
+    )
+  }
+
+  // ── Divergências informacionais — registradas, sem ação necessária ─────────
+  return (
+    <div className="rounded-2xl border border-gray-700/60 bg-gradient-to-br from-gray-800/40 to-gray-950 p-6 flex flex-col justify-center h-full">
+      <div className="w-14 h-14 rounded-full bg-gray-700/40 border border-gray-600/40 flex items-center justify-center mb-4">
+        <AlertTriangle size={28} className="text-gray-400" />
+      </div>
+      <p className="text-xs font-semibold text-gray-400 mb-1">Divergências registradas</p>
+      <p className="text-xl font-bold text-gray-50 leading-tight mb-2">
+        {formatCurrency(divergentAmt)} em divergências
+      </p>
+      <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+        O motor identificou e registrou inconsistências no período. Não há ação necessária — estas divergências já foram tratadas automaticamente.
+      </p>
+      <button
+        onClick={() => navigate('/reconciliations?tab=by-event&filter=divergent')}
+        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-600/50 bg-gray-800/60 text-gray-300 text-sm font-semibold hover:bg-gray-700/60 transition-colors w-fit"
+      >
+        Ver registros <ArrowRight size={14} />
+      </button>
     </div>
   )
 }
@@ -336,9 +366,17 @@ export function DashboardPage() {
   const recvAmt = s.totalReceivedAmount
   const divAmt  = effectiveDivergenceAmount(s)
   const expAmt  = Number(s.totalExpectedAmount ?? 0)
-  const isOk    = pendingReviewCount === 0 &&
-    (ri.amountMismatch + (ri.paymentExceedsExpected ?? 0) + ri.duplicatePayment + ri.paymentWithoutCharge + ri.chargeWithoutPayment +
-     ri.multipleMatchCandidates + ri.expiredChargePaid + ri.invalidReference + ri.processingError) === 0
+  // Requer decisão humana
+  const needsAction = pendingReviewCount > 0 || (ri.multipleMatchCandidates ?? 0) > 0
+
+  // Divergências informacionais — motor tratou, nada para o usuário fazer
+  const hasInfoDivergences = !needsAction &&
+    ((ri.amountMismatch ?? 0) + (ri.paymentExceedsExpected ?? 0) + (ri.duplicatePayment ?? 0) +
+     (ri.paymentWithoutCharge ?? 0) + (ri.chargeWithoutPayment ?? 0) +
+     (ri.expiredChargePaid ?? 0) + (ri.invalidReference ?? 0) + (ri.processingError ?? 0)) > 0
+
+  const verdictState: VerdictState = needsAction ? 'action' : hasInfoDivergences ? 'info' : 'ok'
+  const isOk = verdictState === 'ok'
 
   // ── Sparklines from flux ────────────────────────────────────────────────────
   const spExp  = sparkFromSeries(data.fluxSeries, 'expected')
@@ -376,15 +414,18 @@ export function DashboardPage() {
         onDatePreset={applyDatePreset}
       />
 
-      {/* ── Banner de revisão pendente (aparece sempre que há itens) ─────────── */}
-      <PendingReviewBanner count={pendingReviewCount} />
 
       {/* ── Row 1: Verdict + KPI cards ──────────────────────────────────────── */}
       {!verdictDismissed && (
         <div className="grid grid-cols-12 gap-4">
           {/* Verdict */}
           <div className="col-span-12 lg:col-span-4">
-            <VerdictCard isOk={isOk} divergentAmt={divAmt} periodCloseable={s.periodCloseable} />
+            <VerdictCard
+              state={verdictState}
+              divergentAmt={divAmt}
+              pendingReviewCount={pendingReviewCount}
+              periodCloseable={s.periodCloseable}
+            />
           </div>
 
           {/* KPI cards */}

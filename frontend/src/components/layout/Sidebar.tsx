@@ -15,6 +15,7 @@ import {
   LogOut,
   Upload,
   Plug,
+  Terminal,
 } from 'lucide-react'
 import { dashboardService } from '../../services/dashboardService'
 import { organizationsService } from '../../services/organizationsService'
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
     title: 'Operacional: quem deve, quanto, vencimento e status da cobrança (antes do dinheiro “bater” no banco).',
   },
   { kind: 'link', label: 'Eventos de Pagamento', icon: Zap, to: '/payment-events', adminOnly: true },
+  { kind: 'link', label: 'Desenvolvedor', icon: Terminal, to: '/developer', adminOnly: true },
   {
     kind: 'link',
     label: 'Conciliações',

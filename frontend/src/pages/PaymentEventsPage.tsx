@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Zap } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Terminal } from 'lucide-react'
 import { paymentEventsService } from '../services/paymentEventsService'
 import { Header } from '../components/layout/Header'
 import { DataTable, type Column } from '../components/ui/DataTable'
@@ -9,9 +9,9 @@ import { MoneyText } from '../components/ui/MoneyText'
 import { DateTimeText } from '../components/ui/DateTimeText'
 import { FilterBar, SelectFilter, SearchInput } from '../components/ui/FilterBar'
 import { ErrorState } from '../components/ui/ErrorState'
-import { SendWebhookModal } from '../components/modals/SendWebhookModal'
 import type { PaymentEvent, PaymentEventStatus } from '../types'
 import { truncate } from '../lib/formatters'
+import { useState } from 'react'
 
 const statusOptions: { value: PaymentEventStatus; label: string }[] = [
   { value: 'Received', label: 'Recebido' },
@@ -22,7 +22,6 @@ const statusOptions: { value: PaymentEventStatus; label: string }[] = [
 ]
 
 export function PaymentEventsPage() {
-  const [showModal, setShowModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState<PaymentEventStatus | ''>('')
   const [search, setSearch] = useState('')
 
@@ -94,13 +93,13 @@ export function PaymentEventsPage() {
         title="Eventos de Pagamento"
         subtitle={data ? `${data.totalCount} evento(s) no total` : undefined}
         action={
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+          <Link
+            to="/connections?tab=dev"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-300 border border-gray-700 bg-gray-800/60 rounded-xl hover:bg-gray-800 transition-colors"
           >
-            <Zap size={15} />
-            Enviar Webhook Fake
-          </button>
+            <Terminal size={14} />
+            Simulador de webhooks
+          </Link>
         }
       />
 
@@ -127,7 +126,6 @@ export function PaymentEventsPage() {
         keyExtractor={(e) => e.id}
       />
 
-      {showModal && <SendWebhookModal onClose={() => setShowModal(false)} />}
     </div>
   )
 }

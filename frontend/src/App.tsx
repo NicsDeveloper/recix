@@ -17,6 +17,7 @@ import { AlertsPage } from './pages/AlertsPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ImportPage } from './pages/ImportPage'
 import { ConnectionsPage } from './pages/ConnectionsPage'
+import { DeveloperPage } from './pages/DeveloperPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { useRealtimeEvents } from './hooks/useRealtimeEvents'
 import { useDashboardRealtime } from './hooks/useDashboardRealtime'
@@ -84,8 +85,9 @@ function AppCore() {
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/developer" element={<DeveloperPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/webhooks/simulator" element={<Navigate to="/connections?tab=dev" replace />} />
+          <Route path="/webhooks/simulator" element={<Navigate to="/developer" replace />} />
           <Route path="/join-requests" element={<JoinRequestsPage />} />
         </Route>
 
