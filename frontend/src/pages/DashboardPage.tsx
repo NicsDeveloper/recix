@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  CheckCircle, AlertTriangle, Copy, Ban, Clock,
+  CheckCircle, AlertTriangle, Copy, Ban, Clock, Info,
   ArrowRight, ChevronRight, Download, FileText, Bell, Eye, Plus,
 } from 'lucide-react'
 import { dashboardService }          from '../services/dashboardService'
@@ -235,10 +235,11 @@ const ISSUE_DEFS: Array<{
 ]
 
 function DivergenceSummary({
-  ri, amounts,
+  ri, amounts, verdictState,
 }: {
   ri: DashboardSummary['reconciliationIssues']
   amounts: Record<IssueKey, number>
+  verdictState: VerdictState
 }) {
   const allZero = Object.values(amounts).every(v => v === 0) && (ri.amountMismatch + (ri.paymentExceedsExpected ?? 0) + ri.duplicatePayment + ri.paymentWithoutCharge + ri.expiredChargePaid) === 0
 
@@ -291,15 +292,27 @@ function DivergenceSummary({
             </p>
           </div>
         </div>
-      ) : (
-        <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
-          <AlertTriangle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+      ) : verdictState === 'info' ? (
+        <div className="flex items-start gap-3 rounded-xl border border-gray-700/50 bg-gray-800/40 px-4 py-3">
+          <Info size={16} className="text-gray-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-red-300">
-              Divergências detectadas <span className="font-normal text-gray-400">no período selecionado.</span>
+            <p className="text-sm font-semibold text-gray-300">
+              Registradas automaticamente. <span className="font-normal text-gray-500">Nenhuma ação necessária.</span>
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              O motor identificou e tratou as ocorrências sem intervenção manual.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+          <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-300">
+              Revisão pendente. <span className="font-normal text-gray-400">Conciliações aguardam sua decisão.</span>
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Revise as ocorrências e corrija as inconsistências encontradas.
+              Acesse a aba Revisão nas Conciliações para confirmar ou rejeitar os matches.
             </p>
           </div>
         </div>
@@ -460,7 +473,7 @@ export function DashboardPage() {
 
       {/* ── Row 2: Divergences + Chart ──────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <DivergenceSummary ri={ri} amounts={issueAmts} />
+        <DivergenceSummary ri={ri} amounts={issueAmts} verdictState={verdictState} />
         <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5 flex flex-col">
           <FluxFinanceiroLineChart fluxSeries={data.fluxSeries} summary={s} />
         </div>

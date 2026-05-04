@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Recix.Application.DTOs;
+using Recix.Application.Exceptions;
 using Recix.Application.Interfaces;
 using Recix.Domain.Entities;
 using Recix.Domain.Enums;
@@ -54,7 +56,16 @@ public sealed class ChargeRepository(RecixDbContext db, ICurrentOrganization cur
     public async Task AddAsync(Charge charge, CancellationToken ct = default)
     {
         await db.Charges.AddAsync(charge, ct);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException { SqlState: "23505", ConstraintName: "ix_charges_reference_id" })
+        {
+            db.Entry(charge).State = EntityState.Detached;
+            throw new DuplicateChargeReferenceException(charge.ReferenceId, ex);
+        }
     }
 
     public async Task UpdateAsync(Charge charge, CancellationToken ct = default)

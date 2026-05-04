@@ -28,14 +28,12 @@ export function ThemeToggle({ size = 'sm' }: { size?: 'sm' | 'md' }) {
       </button>
       <button
         type="button"
-        aria-pressed={theme === 'light'}
-        onClick={() => setTheme('light')}
+        disabled
+        title="Tema claro — em breve"
         className={[
-          'rounded-md transition-colors whitespace-nowrap',
+          'rounded-md transition-colors whitespace-nowrap opacity-40 cursor-not-allowed',
           btnClass,
-          theme === 'light'
-            ? 'bg-gray-700 text-gray-50'
-            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/70',
+          'text-gray-400',
         ].join(' ')}
       >
         Claro

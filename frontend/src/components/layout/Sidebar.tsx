@@ -32,40 +32,48 @@ type NavItem =
       badge?: string
       end?: boolean
       adminOnly?: boolean
-      /** Dica longa ao passar o mouse (acessibilidade). */
       title?: string
     }
+  | { kind: 'section'; label: string; adminOnly?: boolean }
   | { kind: 'placeholder'; label: string; icon: ComponentType<{ size?: number; className?: string }> }
 
 const navItems: NavItem[] = [
   { kind: 'link', label: 'Dashboard', icon: LayoutDashboard, to: '/', end: true },
+
+  { kind: 'section', label: 'Operação' },
   {
     kind: 'link',
     label: 'Cobranças',
     icon: CreditCard,
     to: '/charges',
-    title: 'Operacional: quem deve, quanto, vencimento e status da cobrança (antes do dinheiro “bater” no banco).',
+    title: 'Gestão operacional de cobranças — quem deve, quanto e status.',
   },
-  { kind: 'link', label: 'Eventos de Pagamento', icon: Zap, to: '/payment-events', adminOnly: true },
-  { kind: 'link', label: 'Desenvolvedor', icon: Terminal, to: '/developer', adminOnly: true },
   {
     kind: 'link',
     label: 'Conciliações',
     icon: GitMerge,
     to: '/reconciliations',
-    title: 'Auditoria: extrato vs esperado, divergências e a verdade financeira após o recebimento.',
+    title: 'Auditoria financeira — extrato vs. esperado, divergências e revisões.',
   },
-  { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
-  { kind: 'link', label: 'Alertas', icon: Bell, to: '/alerts' },
-  { kind: 'link', label: 'Conexões',        icon: Plug,   to: '/connections' },
+
+  { kind: 'section', label: 'Financeiro' },
   {
     kind: 'link',
     label: 'Importar extratos',
     icon: Upload,
     to: '/import',
-    title: 'CSV de vendas e extrato bancário (CSV ou OFX) — dois envios na mesma página',
+    title: 'CSV de vendas e extrato bancário (CSV ou OFX).',
   },
+  { kind: 'link', label: 'Relatórios', icon: FileText, to: '/reports' },
+
+  { kind: 'section', label: 'Sistema' },
+  { kind: 'link', label: 'Alertas',       icon: Bell,     to: '/alerts' },
+  { kind: 'link', label: 'Conexões',      icon: Plug,     to: '/connections' },
   { kind: 'link', label: 'Configurações', icon: Settings, to: '/settings' },
+
+  { kind: 'section', label: 'Admin', adminOnly: true },
+  { kind: 'link', label: 'Eventos de Pagamento', icon: Zap,      to: '/payment-events', adminOnly: true },
+  { kind: 'link', label: 'Desenvolvedor',        icon: Terminal, to: '/developer',       adminOnly: true },
 ]
 
 
@@ -109,9 +117,20 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => {
+      <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-0.5">
+        {navItems.map((item, idx) => {
           if (item.kind === 'link' && item.adminOnly && !isAdmin) return null
+          if (item.kind === 'section' && item.adminOnly && !isAdmin) return null
+
+          if (item.kind === 'section') {
+            return (
+              <div key={`section-${idx}`} className="pt-4 pb-1 px-3">
+                <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
+                  {item.label}
+                </p>
+              </div>
+            )
+          }
 
           if (item.kind === 'placeholder') {
             const Icon = item.icon

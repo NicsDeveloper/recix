@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Terminal } from 'lucide-react'
+import { Terminal, Zap } from 'lucide-react'
 import { paymentEventsService } from '../services/paymentEventsService'
 import { Header } from '../components/layout/Header'
 import { DataTable, type Column } from '../components/ui/DataTable'
@@ -94,7 +94,7 @@ export function PaymentEventsPage() {
         subtitle={data ? `${data.totalCount} evento(s) no total` : undefined}
         action={
           <Link
-            to="/connections?tab=dev"
+            to="/developer"
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-300 border border-gray-700 bg-gray-800/60 rounded-xl hover:bg-gray-800 transition-colors"
           >
             <Terminal size={14} />

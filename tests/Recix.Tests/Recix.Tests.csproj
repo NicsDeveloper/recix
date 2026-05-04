@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -8,8 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
     <PackageReference Include="FluentAssertions" Version="8.9.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
@@ -18,9 +23,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="System.Net.Http.Json" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Recix.Api\Recix.Api.csproj" />
     <ProjectReference Include="..\..\src\Recix.Domain\Recix.Domain.csproj" />
     <ProjectReference Include="..\..\src\Recix.Application\Recix.Application.csproj" />
     <ProjectReference Include="..\..\src\Recix.Infrastructure\Recix.Infrastructure.csproj" />

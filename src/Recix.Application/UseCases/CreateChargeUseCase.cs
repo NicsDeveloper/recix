@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Recix.Application.DTOs;
+using Recix.Application.Exceptions;
 using Recix.Application.Interfaces;
 using Recix.Domain.Entities;
 
@@ -40,34 +41,47 @@ public sealed class CreateChargeUseCase
         var orgId = _currentOrg.OrganizationId
             ?? throw new UnauthorizedAccessException("Contexto de organização não disponível.");
 
-        var referenceId = await GenerateReferenceIdAsync(cancellationToken);
-        var expiresAt   = DateTime.UtcNow.AddMinutes(request.ExpiresInMinutes);
+        var expiresAt = DateTime.UtcNow.AddMinutes(request.ExpiresInMinutes);
 
-        // Cria a cobrança no PSP (real ou fake) → obtém QR Code
-        var pixResult = await _pixProvider.CreateChargeAsync(referenceId, request.Amount, expiresAt, cancellationToken);
-
-        // ExternalId = txId do PSP (usado na conciliação por ReferenceId)
-        var charge = Charge.Create(orgId, referenceId, pixResult.TxId, request.Amount, expiresAt);
-        charge.SetPixCopiaECola(pixResult.PixCopiaECola);
-
-        await _charges.AddAsync(charge, cancellationToken);
-        _broadcaster.Publish(RecixEvent.ChargeUpdated(charge.Id, orgId));
-
-        _logger.LogInformation(
-            "Charge created: {ChargeId} ReferenceId={ReferenceId} Amount={Amount} TxId={TxId}",
-            charge.Id, charge.ReferenceId, charge.Amount, pixResult.TxId);
-
-        return new CreateChargeResponse
+        const int maxAttempts = 5;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            Id            = charge.Id,
-            ReferenceId   = charge.ReferenceId,
-            ExternalId    = charge.ExternalId,
-            Amount        = charge.Amount,
-            Status        = charge.Status.ToString(),
-            ExpiresAt     = charge.ExpiresAt,
-            CreatedAt     = charge.CreatedAt,
-            PixCopiaECola = charge.PixCopiaECola
-        };
+            var referenceId = await GenerateReferenceIdAsync(cancellationToken);
+            var pixResult   = await _pixProvider.CreateChargeAsync(referenceId, request.Amount, expiresAt, cancellationToken);
+            var charge      = Charge.Create(orgId, referenceId, pixResult.TxId, request.Amount, expiresAt);
+            charge.SetPixCopiaECola(pixResult.PixCopiaECola);
+
+            try
+            {
+                await _charges.AddAsync(charge, cancellationToken);
+            }
+            catch (DuplicateChargeReferenceException) when (attempt < maxAttempts - 1)
+            {
+                _logger.LogWarning(
+                    "ReferenceId collision on attempt {Attempt}: {ReferenceId}. Retrying.",
+                    attempt + 1, referenceId);
+                continue;
+            }
+
+            _broadcaster.Publish(RecixEvent.ChargeUpdated(charge.Id, orgId));
+            _logger.LogInformation(
+                "Charge created: {ChargeId} ReferenceId={ReferenceId} Amount={Amount} TxId={TxId}",
+                charge.Id, charge.ReferenceId, charge.Amount, pixResult.TxId);
+
+            return new CreateChargeResponse
+            {
+                Id            = charge.Id,
+                ReferenceId   = charge.ReferenceId,
+                ExternalId    = charge.ExternalId,
+                Amount        = charge.Amount,
+                Status        = charge.Status.ToString(),
+                ExpiresAt     = charge.ExpiresAt,
+                CreatedAt     = charge.CreatedAt,
+                PixCopiaECola = charge.PixCopiaECola
+            };
+        }
+
+        throw new InvalidOperationException("Não foi possível gerar um ReferenceId único após múltiplas tentativas.");
     }
 
     private async Task<string> GenerateReferenceIdAsync(CancellationToken cancellationToken)

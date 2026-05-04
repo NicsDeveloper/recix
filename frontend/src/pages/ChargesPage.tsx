@@ -256,6 +256,7 @@ export function ChargesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   type MoreMenuAnchor = { chargeId: string; top: number; left: number }
   const [moreMenu, setMoreMenu] = useState<MoreMenuAnchor | null>(null)
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null)
 
   const apiStatus = tabToApiStatus(statusTab)
 
@@ -803,7 +804,7 @@ export function ChargesPage() {
               role="presentation"
               aria-hidden
               className="fixed inset-0 z-[200]"
-              onClick={() => setMoreMenu(null)}
+              onClick={() => { setMoreMenu(null); setConfirmCancelId(null) }}
             />
             <div
               role="menu"
@@ -831,23 +832,43 @@ export function ChargesPage() {
                       Abrir detalhe
                     </button>
                     {c.status === 'Pending' && (
-                      <button
-                        type="button"
-                        disabled={cancelMutation.isPending}
-                        className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-gray-800 disabled:opacity-40"
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              'Cancelar esta cobrança? Ela não poderá receber PIX e sairá do total esperado do período.',
-                            )
-                          ) {
-                            return
-                          }
-                          cancelMutation.mutate(c.id)
-                        }}
-                      >
-                        Cancelar cobrança
-                      </button>
+                      confirmCancelId === c.id ? (
+                        <div className="px-3 py-2.5 border-t border-gray-800/60">
+                          <p className="text-xs text-gray-400 mb-2.5 leading-snug">
+                            Ela não poderá receber PIX e sairá do total esperado do período.
+                          </p>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              disabled={cancelMutation.isPending}
+                              className="flex-1 py-1.5 text-xs text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+                              onClick={() => {
+                                cancelMutation.mutate(c.id)
+                                setMoreMenu(null)
+                                setConfirmCancelId(null)
+                              }}
+                            >
+                              Sim, cancelar
+                            </button>
+                            <button
+                              type="button"
+                              className="flex-1 py-1.5 text-xs text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                              onClick={() => setConfirmCancelId(null)}
+                            >
+                              Voltar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={cancelMutation.isPending}
+                          className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-gray-800 disabled:opacity-40"
+                          onClick={() => setConfirmCancelId(c.id)}
+                        >
+                          Cancelar cobrança
+                        </button>
+                      )
                     )}
                     <button
                       type="button"

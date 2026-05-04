@@ -96,3 +96,6 @@ app.MapEventEndpoints();
 app.MapHub<DashboardHub>("/hubs/dashboard").AllowAnonymous(); // auth via JWT query string
 
 app.Run();
+
+// Expõe Program para WebApplicationFactory nos testes de integração.
+public partial class Program { }
