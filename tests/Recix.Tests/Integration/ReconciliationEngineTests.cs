@@ -244,11 +244,16 @@ public sealed class ReconciliationEngineTests : IntegrationTestBase, IClassFixtu
         // Assert — cobrança deve permanecer Cancelled (estado terminal)
         var final = await GetJsonAsync<ChargeDto>($"/charges/{charge.Id}");
         final.Status.Should().Be("Cancelled",
-            "Cancelled é estado terminal e não pode ser sobrescrito por pagamento posterior");
+            "Cancelled é estado terminal — pagamento posterior não pode alterá-la");
 
-        // Nota: o motor atual encontra a cobrança pelo ReferenceId mesmo cancelada
-        // e registra uma conciliação. Isso é comportamento documentado — se a regra
-        // for que cobranças canceladas devem recusar pagamentos, adicionar guarda
-        // em ReconciliationEngine antes do check de IsExpired().
+        // Pagamento contra cobrança cancelada deve virar PaymentWithoutCharge (sem vínculo com a cobrança)
+        await WaitUntilAsync(
+            () => GetJsonAsync<PagedResult<ReconciliationDto>>("/reconciliations"),
+            r => r.Items.Any(x => x.Status == "PaymentWithoutCharge" && x.ChargeId == null));
+
+        var recons = await GetJsonAsync<PagedResult<ReconciliationDto>>(
+            $"/reconciliations?chargeId={charge.Id}");
+        recons.Items.Should().BeEmpty(
+            "cobrança cancelada não deve ter reconciliações vinculadas");
     }
 }

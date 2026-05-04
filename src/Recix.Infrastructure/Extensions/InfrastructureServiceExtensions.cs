@@ -35,6 +35,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IOrgAlertConfigRepository, OrgAlertConfigRepository>();
         services.AddScoped<IAiInsightService, FakeAiInsightService>();
 
+        services.AddScoped<IExpirationSweeper, ExpirationSweeper>();
         services.AddScoped<ReconciliationEngine>();
         services.AddScoped<ChargeBalanceApplier>();
         services.AddScoped<CreateChargeUseCase>();

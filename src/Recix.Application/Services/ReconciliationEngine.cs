@@ -152,6 +152,35 @@ public sealed class ReconciliationEngine
             charge.RevertToPending();
         }
 
+        // Cobrança cancelada — trata como sem cobrança (o pedido não existe mais).
+        if (charge.Status == ChargeStatus.Cancelled)
+        {
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, null, evt.Id,
+                    ReconciliationStatus.PaymentWithoutCharge,
+                    $"Cobrança {charge.ReferenceId} está cancelada e não pode receber pagamentos.",
+                    null, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null,
+                null);
+        }
+
+        // Cobrança divergente — já processada com inconsistência; novo pagamento é duplicado.
+        // Para receber novo pagamento, emita uma nova cobrança.
+        if (charge.Status == ChargeStatus.Divergent)
+        {
+            return new ReconciliationOutcome(
+                ReconciliationResult.Create(
+                    orgId, charge.Id, evt.Id,
+                    ReconciliationStatus.DuplicatePayment,
+                    $"Cobrança {charge.ReferenceId} já foi processada com divergência. Emita uma nova cobrança para receber novo pagamento.",
+                    charge.Amount, evt.PaidAmount,
+                    ConfidenceLevel.High, match.Reason, match.MatchedField),
+                null,
+                null);
+        }
+
         if (charge.Status is ChargeStatus.Paid or ChargeStatus.Overpaid)
         {
             return new ReconciliationOutcome(
